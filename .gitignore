@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+*.p8
+*.mobileprovision
+*.cer
+*.p12
+.env
+.env*.local
+credentials.json
+.DS_Store
+dist/
+web-build/
