@@ -36,7 +36,9 @@
           "icon": "./assets/icon.png",
           "color": "#8b5cf6"
         }
-      ]
+      ],
+      "expo-audio",
+      "expo-asset"
     ],
     "owner": "umer.farooq",
     "extra": {

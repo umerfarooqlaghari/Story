@@ -4,15 +4,17 @@ import Purchases from 'react-native-purchases';
 import { Platform } from 'react-native';
 
 // Supabase
-const supabaseUrl = 'YOUR_SUPABASE_URL';
-const supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY';
+const supabaseUrl = 'https://qbdeadqwfyostiyfcdvl.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiZGVhZHF3Znlvc3RpeWZjZHZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0ODA0OTMsImV4cCI6MjEwNzA1NjQ5M30.Rk35HfJ6Vje-7ZdE8PK7rxPcnmm-w530yr5EkngitmU';
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // RevenueCat Hook
 export const setupRevenueCat = () => {
+  // Normally RevenueCat has distinct iOS and Android keys. 
+  // Using the test key provided in backend/.env for both for now.
   if (Platform.OS === 'ios') {
-    Purchases.configure({ apiKey: "YOUR_RC_IOS_KEY" });
+    Purchases.configure({ apiKey: "test_CbDkieSGZtctvuTehYUudJJXJQm" });
   } else if (Platform.OS === 'android') {
-    Purchases.configure({ apiKey: "YOUR_RC_ANDROID_KEY" });
+    Purchases.configure({ apiKey: "test_CbDkieSGZtctvuTehYUudJJXJQm" });
   }
 };

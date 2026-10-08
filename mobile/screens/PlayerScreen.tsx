@@ -1,32 +1,30 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Button } from 'react-native';
-import { Audio } from 'expo-av';
+import { useAudioPlayer } from 'expo-audio';
 
 export default function PlayerScreen({ route }: any) {
   const { story } = route.params;
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const player = useAudioPlayer(story?.audio_url ? { uri: story.audio_url } : null);
 
-  useEffect(() => {
-    return sound
-      ? () => { sound.unloadAsync(); }
-      : undefined;
-  }, [sound]);
-
-  const playAudio = async () => {
-    if (!story.audio_url) return;
-    const { sound: newSound } = await Audio.Sound.createAsync(
-       { uri: story.audio_url }
-    );
-    setSound(newSound);
-    await newSound.playAsync();
+  const togglePlayback = () => {
+    if (!story?.audio_url) return;
+    if (player.playing) {
+      player.pause();
+    } else {
+      player.play();
+    }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{story.title}</Text>
-      <Button title="▶ Play Story" onPress={playAudio} />
+      <Text style={styles.title}>{story?.title}</Text>
+      <Button 
+        title={player.playing ? "⏸ Pause Story" : "▶ Play Story"} 
+        onPress={togglePlayback} 
+        disabled={!story?.audio_url}
+      />
       <View style={styles.contentContainer}>
-         <Text style={styles.content}>{story.content}</Text>
+         <Text style={styles.content}>{story?.content}</Text>
       </View>
     </View>
   );
