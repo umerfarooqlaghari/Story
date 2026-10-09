@@ -10,3 +10,4 @@ credentials.json
 .DS_Store
 dist/
 web-build/
+.venv/

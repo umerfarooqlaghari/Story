@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: storytime-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /docs
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_API_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AWSAccessKeyId
+        sync: false
+      - key: AWSSecretAccessKey
+        sync: false
+      - key: AWSRegion
+        value: us-east-1
+      - key: FromEmail
+        sync: false
+      - key: FromName
+        value: Bed time Stories
+      - key: RevenueCatSecretAPIKey
+        sync: false
+      - key: RevenueCatTestStoreAPIKey
+        sync: false

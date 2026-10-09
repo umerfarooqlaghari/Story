@@ -1,91 +1,35 @@
-import React, { useEffect, useState } from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
-import { registerForPushNotificationsAsync } from './lib/notifications';
-import Constants from 'expo-constants';
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import GenerateStoryScreen from './screens/GenerateStoryScreen';
+import PlayerScreen from './screens/PlayerScreen';
+import HomeScreen from './screens/HomeScreen';
+import ClassicStoriesScreen from './screens/ClassicStoriesScreen';
+
+import AuthScreen from './screens/AuthScreen';
+import PaywallScreen from './screens/PaywallScreen';
+
+const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    registerForPushNotificationsAsync(projectId)
-      .then((token) => {
-        setExpoPushToken(token);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, []);
+  // RevenueCat is now initialized in index.ts
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Story</Text>
-      <Text style={styles.subtitle}>Welcome to Story Mobile</Text>
-      
-      <View style={styles.tokenCard}>
-        <Text style={styles.tokenLabel}>Expo Push Notifications:</Text>
-        {loading ? (
-          <ActivityIndicator color="#8b5cf6" style={{ marginTop: 8 }} />
-        ) : expoPushToken ? (
-          <Text style={styles.tokenValue} numberOfLines={2} ellipsizeMode="middle">
-            {expoPushToken}
-          </Text>
-        ) : (
-          <Text style={styles.tokenEmpty}>
-            Notifications ready (Push tokens are generated on physical devices)
-          </Text>
-        )}
-      </View>
-      <StatusBar style="auto" />
-    </View>
+    <NavigationContainer>
+      <Stack.Navigator 
+        initialRouteName="Home"
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#ffffff' }
+        }}
+      >
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="Paywall" component={PaywallScreen} />
+        <Stack.Screen name="Auth" component={AuthScreen} />
+        <Stack.Screen name="Classics" component={ClassicStoriesScreen} />
+        <Stack.Screen name="Generate" component={GenerateStoryScreen} />
+        <Stack.Screen name="Player" component={PlayerScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#f8fafc',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#94a3b8',
-    marginBottom: 32,
-  },
-  tokenCard: {
-    width: '100%',
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  tokenLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#8b5cf6',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  tokenValue: {
-    fontSize: 12,
-    color: '#e2e8f0',
-    marginTop: 8,
-    fontFamily: 'monospace',
-  },
-  tokenEmpty: {
-    fontSize: 13,
-    color: '#64748b',
-    marginTop: 8,
-  },
-});
