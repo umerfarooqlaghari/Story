@@ -12,8 +12,13 @@ import {
   REVENUECAT_TEST_STORE_API_KEY
 } from './config';
 
-// Supabase
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Safe Supabase client initialization (guarantees module load never throws)
+const validUrl = (SUPABASE_URL && SUPABASE_URL.startsWith('http'))
+  ? SUPABASE_URL
+  : 'https://placeholder.supabase.co';
+const validKey = SUPABASE_ANON_KEY || 'placeholder-anon-key';
+
+export const supabase = createClient(validUrl, validKey);
 
 // Check if currently running inside Expo Go client app
 export const isExpoGo =
