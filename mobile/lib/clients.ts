@@ -25,26 +25,11 @@ export const isExpoGo =
   Constants.appOwnership === 'expo' ||
   Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
-// RevenueCat Hook
-let isConfiguredSync = false;
-export const setupRevenueCat = () => {
-  if (isConfiguredSync) return;
-  try {
-    // When running in Expo Go, native StoreKit is not available, so RevenueCat requires the Test Store key.
-    // In standalone production / TestFlight builds, RevenueCat requires the native StoreKit API key.
-    let apiKey: string;
-    if (isExpoGo) {
-      apiKey = REVENUECAT_TEST_STORE_API_KEY;
-    } else {
-      apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
-    }
+import { initPurchases } from './subscriptionService';
 
-    if (apiKey) {
-      Purchases.configure({ apiKey });
-      isConfiguredSync = true;
-      console.log(`[RevenueCat] Initialized successfully in ${isExpoGo ? 'Expo Go (Test Store)' : 'Native ' + Platform.OS} mode.`);
-    }
-  } catch (err) {
-    console.warn('[RevenueCat] Initialization warning (fallback active):', err);
-  }
+// RevenueCat Hook
+export const setupRevenueCat = () => {
+  initPurchases().catch((err) => {
+    console.warn('[RevenueCat] Initialization warning:', err);
+  });
 };

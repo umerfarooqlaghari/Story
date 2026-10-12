@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
+import Purchases, { PurchasesOffering } from 'react-native-purchases';
 import { useSubscription } from '../hooks/useSubscription';
+import {
+  getOfferings,
+  findPackage,
+  purchasePackage,
+  restorePurchases,
+  ENTITLEMENT_ID,
+  ENTITLEMENT_ID_ALT
+} from '../lib/subscriptionService';
+import { API_BASE_URL } from '../lib/config';
 
 // Crisp, high-fidelity Vector SVGs replacing all emojis
 const CrownIcon = ({ size = 14, color = '#7c3aed' }: { size?: number; color?: string }) => (
@@ -73,19 +83,46 @@ const StarIcon = ({ size = 10, color = '#ffffff' }: { size?: number; color?: str
 export default function PaywallScreen({ navigation }: any) {
   const {
     isPremium,
+    setIsPremium,
     trialSecondsRemaining,
     subscriptionPlan,
-    user,
-    subscribe,
-    restorePurchases,
-    packages
+    setSubscriptionPlan,
+    user
   } = useSubscription();
+
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
+  const [loadingOfferings, setLoadingOfferings] = useState(true);
+  const [offeringsError, setOfferingsError] = useState<string | null>(null);
 
-  const yearlyPriceString = packages.yearly?.product.priceString || '$320';
-  const monthlyPriceString = packages.monthly?.product.priceString || '$30';
+  useEffect(() => {
+    loadOfferings();
+  }, []);
+
+  const loadOfferings = async () => {
+    setLoadingOfferings(true);
+    setOfferingsError(null);
+    try {
+      const result = await getOfferings();
+      if (result.status === 'ok') {
+        setOfferings(result.offering);
+      } else {
+        setOfferingsError(result.message);
+      }
+    } catch (e: any) {
+      setOfferingsError(e?.message || 'Unable to connect to Apple App Store.');
+    } finally {
+      setLoadingOfferings(false);
+    }
+  };
+
+  const monthlyPkg = findPackage(offerings, 'monthly');
+  const yearlyPkg = findPackage(offerings, 'yearly');
+
+  const yearlyPriceString = yearlyPkg?.product.priceString || '$320';
+  const monthlyPriceString = monthlyPkg?.product.priceString || '$30';
 
   const formatTrialTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -106,38 +143,99 @@ export default function PaywallScreen({ navigation }: any) {
       return;
     }
 
-    setPurchasing(true);
-    const res = await subscribe(selectedPlan);
-    setPurchasing(false);
-
-    if (res.success) {
+    const pkgToBuy = selectedPlan === 'yearly' ? yearlyPkg : monthlyPkg;
+    if (!pkgToBuy) {
       Alert.alert(
-        'Welcome to Story Time PRO!',
-        `Your ${selectedPlan === 'yearly' ? 'Yearly' : 'Monthly'} subscription is now active with unlimited ElevenLabs narration!`,
-        [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
+        'Product Loading',
+        'Subscription packages are currently loading from Apple App Store. Please wait a moment or tap Retry.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: loadOfferings }
+        ]
       );
-    } else if (res.cancelled) {
-      // User dismissed Apple StoreKit sheet
-    } else {
-      Alert.alert('Subscription Notice', res.error || 'Could not complete subscription. Please try again.');
+      return;
+    }
+
+    setPurchasing(true);
+    try {
+      if (user.id) {
+        await Purchases.logIn(user.id);
+      }
+
+      console.log('[PaywallScreen] Prompting Apple In-App Purchase for package:', pkgToBuy.identifier);
+      const res = await purchasePackage(pkgToBuy);
+
+      if (res.success) {
+        setIsPremium(true);
+        setSubscriptionPlan(selectedPlan);
+
+        // Sync with backend database in Supabase
+        fetch(`${API_BASE_URL}/api/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.id, plan: selectedPlan })
+        }).catch(() => {});
+
+        Alert.alert(
+          'Welcome to Story Time PRO!',
+          `Your ${selectedPlan === 'yearly' ? 'Yearly' : 'Monthly'} subscription is now active with unlimited ElevenLabs narration!`,
+          [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
+        );
+      } else if (res.userCancelled) {
+        // User closed Apple StoreKit sheet
+      } else {
+        Alert.alert(
+          'Subscription Notice',
+          'Purchase was completed, but active entitlement was not found. Please tap "Restore Purchases" to refresh.'
+        );
+      }
+    } catch (e: any) {
+      if (e.userCancelled) {
+        // Dismissed Apple StoreKit dialog
+      } else {
+        console.error('[PaywallScreen] Purchase error:', e);
+        Alert.alert('Purchase Failed', e.message || 'Could not complete Apple In-App Purchase.');
+      }
+    } finally {
+      setPurchasing(false);
     }
   };
 
   const handleRestore = async () => {
     setRestoring(true);
-    const res = await restorePurchases();
-    setRestoring(false);
+    try {
+      if (user?.id) {
+        await Purchases.logIn(user.id);
+      }
 
-    if (res.success && res.isPremium) {
-      Alert.alert(
-        'Purchases Restored',
-        'Your Story Time PRO subscription was successfully restored!',
-        [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
-      );
-    } else if (res.success && !res.isPremium) {
-      Alert.alert('No Subscription Found', 'We could not find an active Story Time PRO subscription linked to your Apple ID.');
-    } else {
-      Alert.alert('Restore Failed', res.error || 'Unable to restore purchases at this time.');
+      const res = await restorePurchases();
+      if (res.success) {
+        setIsPremium(true);
+        const active = res.customerInfo?.entitlements?.active;
+        const ent = active ? (active[ENTITLEMENT_ID] || active[ENTITLEMENT_ID_ALT] || active['Premium']) as any : null;
+        const plan = ent?.productIdentifier?.toLowerCase().includes('year') ? 'yearly' : 'monthly';
+        setSubscriptionPlan(plan);
+
+        if (user?.id) {
+          fetch(`${API_BASE_URL}/api/subscribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: user.id, plan })
+          }).catch(() => {});
+        }
+
+        Alert.alert(
+          'Purchases Restored',
+          'Your Story Time PRO subscription was successfully restored!',
+          [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert('No Subscription Found', 'We could not find an active Story Time PRO subscription linked to your Apple ID.');
+      }
+    } catch (e: any) {
+      Alert.alert('Restore Failed', e.message || 'Unable to restore purchases from Apple at this time.');
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -160,6 +258,33 @@ export default function PaywallScreen({ navigation }: any) {
             Experience all 20 classic children's tales and unlimited custom AI bedtime stories with crystal-clear ElevenLabs voices.
           </Text>
         </View>
+
+        {/* StoreKit Notice Banner if offerings failed to load */}
+        {offeringsError && (
+          <View style={[styles.trialBanner, { backgroundColor: '#fef2f2', borderColor: '#fecaca', marginBottom: 14 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.trialTitle, { color: '#b91c1c' }]}>
+                Subscription Packages Notice
+              </Text>
+              <Text style={[styles.trialDesc, { color: '#7f1d1d' }]}>
+                {offeringsError}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={loadOfferings}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                backgroundColor: '#b91c1c',
+                borderRadius: 8,
+                alignSelf: 'center',
+                marginLeft: 8
+              }}
+            >
+              <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 12 }}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Status Card: Pro Active vs Free Trial vs Guest */}
         {user && isPremium ? (
