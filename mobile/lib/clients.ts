@@ -32,6 +32,7 @@ export const setupRevenueCat = () => {
       apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
     }
 
+
     if (apiKey) {
       Purchases.configure({ apiKey });
       console.log(`[RevenueCat] Initialized successfully in ${isExpoGo ? 'Expo Go (Test Store)' : 'Native ' + Platform.OS} mode.`);
