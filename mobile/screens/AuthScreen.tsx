@@ -7,9 +7,9 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  SafeAreaView,
   ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/clients';
 import { saveUserSession, clearUserSession, getUserSession, UserProfile } from '../lib/auth';
 import { API_BASE_URL } from '../lib/config';

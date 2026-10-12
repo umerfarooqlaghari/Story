@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  SafeAreaView,
   StatusBar,
   ActivityIndicator,
   Modal,
@@ -15,6 +14,7 @@ import {
   Linking,
   Image
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/clients';
 import { useSubscription } from '../hooks/useSubscription';
 import { clearUserSession } from '../lib/auth';
