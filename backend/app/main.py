@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
 import uuid
+import re
 from typing import Optional, List
 from .config import supabase, ELEVENLABS_API_KEY, OPENAI_API_KEY, RC_SECRET_API_KEY
 from .auth_service import (
@@ -12,7 +13,9 @@ from .auth_service import (
     verify_password,
     create_tokens,
     verify_jwt_token,
-    send_support_query_email
+    send_support_query_email,
+    send_book_request_email,
+    send_new_story_broadcast_email
 )
 from datetime import datetime, timezone, timedelta
 from openai import AsyncOpenAI
@@ -41,6 +44,8 @@ CURATED_VOICES = [
 
 # Auth Models
 class SignupRequest(BaseModel):
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
     email: str
     password: str
     confirm_password: str
@@ -48,6 +53,29 @@ class SignupRequest(BaseModel):
 class VerifyOTPRequest(BaseModel):
     email: str
     otp_code: str
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+
+class BookRequestModel(BaseModel):
+    user_id: Optional[str] = None
+    email: Optional[str] = None
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    title: str
+    author: Optional[str] = ""
+    category: Optional[str] = "Bedtime Classics"
+    notes: Optional[str] = ""
+
+class UserStoryModel(BaseModel):
+    user_id: Optional[str] = None
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    title: str
+    author: Optional[str] = ""
+    category: Optional[str] = "Community Stories"
+    content: str
+    cover_url: Optional[str] = None
+    is_public: Optional[bool] = True
 
 class LoginRequest(BaseModel):
     email: str
@@ -74,7 +102,8 @@ class StoryRequest(BaseModel):
 class AudioVariantRequest(BaseModel):
     story_id: str
     voice_id: Optional[str] = "JBFqnCBsd6RMkjVDRZzb"
-    text_content: str
+    text_content: Optional[str] = ""
+    part_index: Optional[int] = 0
 
 class SubscriptionRequest(BaseModel):
     user_id: str
@@ -170,11 +199,16 @@ async def signup_verify(req: VerifyOTPRequest):
             print(f"Create auth user error: {e}")
             user_id = str(uuid.uuid4())
 
-    # Create/update in Supabase profiles
+    # Create/update in Supabase profiles with first and last name
+    first_name = (req.first_name or "").strip()
+    last_name = (req.last_name or "").strip()
+    full_name = f"{first_name} {last_name}".strip() or req.email.split("@")[0]
     try:
         supabase.table("profiles").upsert({
             "id": user_id,
-            "full_name": req.email.split("@")[0],
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": full_name,
             "subscription_plan": None,
             "is_premium": False,
             "trial_seconds_used": 0
@@ -191,7 +225,9 @@ async def signup_verify(req: VerifyOTPRequest):
         "user": {
             "id": user_id,
             "email": req.email,
-            "full_name": req.email.split("@")[0],
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": full_name,
             "is_premium": False
         },
         "tokens": tokens
@@ -227,12 +263,18 @@ async def login(req: LoginRequest):
     # Check profile and subscription
     is_premium = False
     sub_plan = None
+    first_name = ""
+    last_name = ""
+    full_name = req.email.split("@")[0]
     if is_valid_uuid(user_id):
         try:
             prof = supabase.table("profiles").select("*").eq("id", user_id).execute()
             if prof.data and len(prof.data) > 0:
                 is_premium = prof.data[0].get("is_premium", False)
                 sub_plan = prof.data[0].get("subscription_plan")
+                first_name = prof.data[0].get("first_name") or ""
+                last_name = prof.data[0].get("last_name") or ""
+                full_name = prof.data[0].get("full_name") or f"{first_name} {last_name}".strip() or full_name
         except Exception as e:
             print(f"Profile check error: {e}")
 
@@ -258,7 +300,9 @@ async def login(req: LoginRequest):
         "user": {
             "id": user_id,
             "email": req.email,
-            "full_name": req.email.split("@")[0],
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": full_name,
             "is_premium": is_premium,
             "subscription_plan": sub_plan
         },
@@ -472,13 +516,120 @@ async def get_voices():
     return {"voices": CURATED_VOICES}
 
 @app.get("/api/stories")
-async def get_stories():
-    """Return all stories from Supabase."""
+async def get_stories(user_id: Optional[str] = None):
+    """Return all stories: classic + public stories, plus private stories belonging to user_id."""
     try:
         res = supabase.table("stories").select("*").order("created_at", desc=False).execute()
-        return {"stories": res.data or []}
+        all_stories = res.data or []
+        
+        filtered = []
+        for s in all_stories:
+            is_classic = s.get("is_classic", False)
+            is_public = s.get("is_public", True)
+            story_uid = str(s.get("user_id") or "")
+            
+            # Include story if it's classic, public, or created by this user
+            if is_classic or is_public or (user_id and story_uid and story_uid == str(user_id)):
+                filtered.append(s)
+                
+        return {"stories": filtered}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/request-book")
+async def request_book(req: BookRequestModel):
+    """Logs reader's requested book and dispatches notification to info@alpha-devs.cloud."""
+    user_name = f"{req.first_name} {req.last_name}".strip() or "Reader"
+    clean_title = req.title.strip()
+    clean_author = req.author.strip() if req.author else "Classic/Unknown"
+    
+    try:
+        supabase.table("book_requests").insert({
+            "user_id": req.user_id,
+            "first_name": req.first_name,
+            "last_name": req.last_name,
+            "email": req.email,
+            "title": clean_title,
+            "author": clean_author,
+            "category": req.category or "Bedtime Classics",
+            "notes": req.notes or "",
+            "status": "pending"
+        }).execute()
+    except Exception as e:
+        print(f"Book request DB insert notice: {e}")
+
+    # Dispatch email to support channel
+    send_book_request_email(
+        user_name=user_name,
+        user_email=req.email or "reader@storytime.app",
+        title=clean_title,
+        author=clean_author,
+        category=req.category or "Bedtime Classics",
+        notes=req.notes or ""
+    )
+
+    return {
+        "success": True,
+        "message": f"Your request for \"{clean_title}\" has been received! Our narrators will review and add it."
+    }
+
+@app.post("/api/add-user-story")
+async def add_user_story(story: UserStoryModel):
+    """Publishes a user-submitted story. If public, broadcasts release email from newstory@alpha-devs.cloud."""
+    first_name = (story.first_name or "").strip()
+    last_name = (story.last_name or "").strip()
+    full_author = f"{first_name} {last_name}".strip() or story.author or "Community Storyteller"
+    
+    is_pub = story.is_public if story.is_public is not None else True
+    story_data = {
+        "user_id": story.user_id if is_valid_uuid(story.user_id) else None,
+        "title": story.title.strip(),
+        "author": full_author,
+        "category": story.category or "Community Stories",
+        "content": story.content.strip(),
+        "cover_url": story.cover_url,
+        "is_classic": False,
+        "is_public": is_pub
+    }
+
+    created = None
+    try:
+        db_res = supabase.table("stories").insert(story_data).execute()
+        if db_res.data and len(db_res.data) > 0:
+            created = db_res.data[0]
+    except Exception as e:
+        print(f"Error inserting user story: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to publish story: {str(e)}")
+
+    broadcast_sent = 0
+    if is_pub:
+        try:
+            # Query reader emails
+            emails_res = supabase.table("auth_otps").select("email").execute()
+            all_emails = set()
+            for r in (emails_res.data or []):
+                em = (r.get("email") or "").strip().lower()
+                if em and "@" in em:
+                    all_emails.add(em)
+            
+            # Broadcast release email from newstory@alpha-devs.cloud
+            if all_emails:
+                broadcast_sent = send_new_story_broadcast_email(
+                    recipient_emails=list(all_emails),
+                    author_name=full_author,
+                    story_title=story.title.strip(),
+                    category=story.category or "Community Stories",
+                    snippet=story.content[:240]
+                )
+        except Exception as b_err:
+            print(f"Notice broadcasting new story email: {b_err}")
+
+    return {
+        "success": True,
+        "story": created or story_data,
+        "broadcast_sent": broadcast_sent,
+        "message": f"Story \"{story.title}\" published successfully!" + (f" Broadcast email sent to {broadcast_sent} readers." if is_pub else " Saved privately to your bookshelf.")
+    }
 
 @app.post("/generate-story")
 async def generate_story(request: StoryRequest):
@@ -556,40 +707,124 @@ async def generate_story(request: StoryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database insert failed: {str(e)}")
 
+def split_story_into_chunks(text: str, max_chars: int = 1400) -> list[str]:
+    """
+    Splits story text into coherent narrative chunks (approx max_chars)
+    on paragraph or sentence boundaries without clipping sentences.
+    """
+    text = (text or "").strip()
+    if not text:
+        return [""]
+    if len(text) <= max_chars:
+        return [text]
+
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        paragraphs = [text]
+
+    chunks = []
+    current_chunk = ""
+
+    for para in paragraphs:
+        if len(current_chunk) + len(para) + 2 <= max_chars:
+            current_chunk = f"{current_chunk}\n\n{para}".strip()
+        else:
+            if current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+            if len(para) > max_chars:
+                sentences = re.split(r'(?<=[.!?])\s+', para)
+                sub_chunk = ""
+                for sent in sentences:
+                    if len(sub_chunk) + len(sent) + 1 <= max_chars:
+                        sub_chunk = f"{sub_chunk} {sent}".strip()
+                    else:
+                        if sub_chunk:
+                            chunks.append(sub_chunk)
+                        sub_chunk = sent
+                if sub_chunk:
+                    current_chunk = sub_chunk
+            else:
+                current_chunk = para
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks if chunks else [text]
+
 @app.post("/api/get-or-generate-audio")
 async def get_or_generate_audio(request: AudioVariantRequest):
     voice_id = request.voice_id or "JBFqnCBsd6RMkjVDRZzb"
     story_id = request.story_id
+    requested_part = max(0, request.part_index or 0)
     
     # 1. Resolve story_id to a valid UUID if a title or placeholder was passed
+    story_db_content = None
     if not is_valid_uuid(story_id):
         try:
-            match = supabase.table("stories").select("id").ilike("title", f"%{story_id}%").limit(1).execute()
+            match = supabase.table("stories").select("id, content").ilike("title", f"%{story_id}%").limit(1).execute()
             if match.data and len(match.data) > 0:
                 story_id = match.data[0]["id"]
+                story_db_content = match.data[0].get("content")
             else:
-                # Fuzzy fallback matching on any classic story
-                s_all = supabase.table("stories").select("id, title").execute()
+                s_all = supabase.table("stories").select("id, title, content").execute()
                 for s in (s_all.data or []):
                     if s["title"].lower() in str(story_id).lower() or str(story_id).lower() in s["title"].lower():
                         story_id = s["id"]
+                        story_db_content = s.get("content")
                         break
         except Exception as e:
             print(f"Resolve story_id error: {e}")
 
-    # 2. Check cache in story_audio_variants first (Fast 50ms response, zero ElevenLabs cost)
+    # 2. Determine full text of the story
+    full_text = (request.text_content or "").strip()
+    if (len(full_text) < 40 or not full_text) and is_valid_uuid(story_id):
+        try:
+            if not story_db_content:
+                s_rec = supabase.table("stories").select("content").eq("id", story_id).execute()
+                if s_rec.data and s_rec.data[0].get("content"):
+                    story_db_content = s_rec.data[0]["content"]
+            if story_db_content:
+                full_text = story_db_content.strip()
+        except Exception as e:
+            print(f"Fetch story content error: {e}")
+
+    # 3. Partition story text into narrative chunks and compute full duration
+    chunks = split_story_into_chunks(full_text, max_chars=1400)
+    total_parts = len(chunks)
+    part_index = min(requested_part, total_parts - 1)
+    
+    # Calculate estimated duration for each part (~140 words/min = 2.33 words/sec)
+    chunk_durations = [max(30, round(len(c.split()) / 140 * 60)) for c in chunks]
+    total_duration = sum(chunk_durations)
+    part_duration = chunk_durations[part_index]
+    has_next_part = part_index < (total_parts - 1)
+
+    # 4. Cache lookup in story_audio_variants
+    # Part 0 uses voice_id directly for backward compatibility with existing audio
+    cache_voice_key = voice_id if part_index == 0 else f"{voice_id}__part_{part_index}"
+
     if is_valid_uuid(story_id):
         try:
-            cached = supabase.table("story_audio_variants").select("*").eq("story_id", story_id).eq("voice_id", voice_id).execute()
+            cached = supabase.table("story_audio_variants").select("*").eq("story_id", story_id).eq("voice_id", cache_voice_key).execute()
             if cached.data and len(cached.data) > 0:
-                return {"audio_url": cached.data[0]["audio_url"], "cached": True, "voice_id": voice_id}
+                return {
+                    "audio_url": cached.data[0]["audio_url"],
+                    "cached": True,
+                    "voice_id": voice_id,
+                    "part_index": part_index,
+                    "total_parts": total_parts,
+                    "part_duration": part_duration,
+                    "total_duration": total_duration,
+                    "has_next_part": has_next_part,
+                    "chunk_durations": chunk_durations
+                }
             
-            # If default voice is requested and main story table already has audio_url, return it
-            if voice_id == "JBFqnCBsd6RMkjVDRZzb":
+            # If part 0 with default voice, check master story table audio_url
+            if part_index == 0 and voice_id == "JBFqnCBsd6RMkjVDRZzb":
                 s_rec = supabase.table("stories").select("audio_url").eq("id", story_id).execute()
                 if s_rec.data and s_rec.data[0].get("audio_url"):
                     main_audio = s_rec.data[0]["audio_url"]
-                    # Also insert into story_audio_variants cache for consistency
                     try:
                         supabase.table("story_audio_variants").upsert({
                             "story_id": story_id,
@@ -598,18 +833,27 @@ async def get_or_generate_audio(request: AudioVariantRequest):
                         }, on_conflict="story_id,voice_id").execute()
                     except Exception:
                         pass
-                    return {"audio_url": main_audio, "cached": True, "voice_id": voice_id}
+                    return {
+                        "audio_url": main_audio,
+                        "cached": True,
+                        "voice_id": voice_id,
+                        "part_index": 0,
+                        "total_parts": total_parts,
+                        "part_duration": part_duration,
+                        "total_duration": total_duration,
+                        "has_next_part": has_next_part,
+                        "chunk_durations": chunk_durations
+                    }
         except Exception as e:
             print(f"Cache check error: {e}")
 
     if not ELEVENLABS_API_KEY:
         raise HTTPException(status_code=500, detail="ElevenLabs API key is not configured.")
 
-    # 3. Generate using ElevenLabs TTS with fallback mechanism
-    # Truncate text for performance & quota optimization
-    truncated_text = request.text_content[:1500] if len(request.text_content) > 1500 else request.text_content
+    # 5. Generate audio for this specific part using ElevenLabs TTS
+    chunk_to_narrate = chunks[part_index]
     data = {
-        "text": truncated_text,
+        "text": chunk_to_narrate,
         "model_id": "eleven_multilingual_v2",
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
     }
@@ -617,8 +861,7 @@ async def get_or_generate_audio(request: AudioVariantRequest):
     selected_voice_to_try = voice_id
     audio_content = None
     
-    async with httpx.AsyncClient(timeout=40.0) as client:
-        # First attempt with requested voice
+    async with httpx.AsyncClient(timeout=50.0) as client:
         elevenlabs_url = f"https://api.elevenlabs.io/v1/text-to-speech/{selected_voice_to_try}"
         headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
         resp = await client.post(elevenlabs_url, json=data, headers=headers)
@@ -627,21 +870,45 @@ async def get_or_generate_audio(request: AudioVariantRequest):
             audio_content = resp.content
         else:
             print(f"ElevenLabs error on voice {selected_voice_to_try}: {resp.status_code} {resp.text}")
-            # If voice failed (e.g. library voice or quota error on specific voice), fallback to George
+            fallback_worked = False
             if selected_voice_to_try != "JBFqnCBsd6RMkjVDRZzb":
                 selected_voice_to_try = "JBFqnCBsd6RMkjVDRZzb"
                 elevenlabs_url = f"https://api.elevenlabs.io/v1/text-to-speech/{selected_voice_to_try}"
                 resp2 = await client.post(elevenlabs_url, json=data, headers=headers)
                 if resp2.status_code == 200:
                     audio_content = resp2.content
-                else:
-                    raise HTTPException(status_code=500, detail=f"ElevenLabs TTS failed: {resp2.text}")
-            else:
-                raise HTTPException(status_code=500, detail=f"ElevenLabs TTS failed: {resp.text}")
+                    fallback_worked = True
 
-    # 4. Upload audio to Supabase Storage bucket 'stories'
+            if not fallback_worked and audio_content is None:
+                # If quota exceeded or ElevenLabs fails, gracefully reuse existing story audio
+                # or default narration sample so playback never breaks or crashes!
+                default_audio_sample = "https://qbdeadqwfyostiyfcdvl.supabase.co/storage/v1/object/public/stories/variants/ae7871f1-64fd-4411-9f20-d27c39c33283/JBFqnCBsd6RMkjVDRZzb.mp3"
+                fallback_url = default_audio_sample
+                if is_valid_uuid(story_id):
+                    try:
+                        s_rec = supabase.table("stories").select("audio_url").eq("id", story_id).execute()
+                        if s_rec.data and s_rec.data[0].get("audio_url"):
+                            fallback_url = s_rec.data[0]["audio_url"]
+                    except Exception as e:
+                        print(f"Fallback check error: {e}")
+                
+                return {
+                    "audio_url": fallback_url,
+                    "cached": True,
+                    "voice_id": selected_voice_to_try,
+                    "part_index": part_index,
+                    "total_parts": total_parts,
+                    "part_duration": part_duration,
+                    "total_duration": total_duration,
+                    "has_next_part": has_next_part,
+                    "chunk_durations": chunk_durations,
+                    "quota_limited": True
+                }
+
+    # 6. Upload audio to Supabase Storage bucket 'stories'
     safe_story_folder = story_id if is_valid_uuid(story_id) else str(uuid.uuid4())
-    file_path = f"variants/{safe_story_folder}/{selected_voice_to_try}.mp3"
+    part_suffix = "" if part_index == 0 else f"_part{part_index}"
+    file_path = f"variants/{safe_story_folder}/{selected_voice_to_try}{part_suffix}.mp3"
     try:
         supabase.storage.from_("stories").upload(
             path=file_path,
@@ -652,23 +919,33 @@ async def get_or_generate_audio(request: AudioVariantRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Storage upload failed: {str(e)}")
 
-    # 5. Save variant in story_audio_variants cache table
+    # 7. Save variant in story_audio_variants cache table
     if is_valid_uuid(story_id):
         try:
+            save_voice_key = selected_voice_to_try if part_index == 0 else f"{selected_voice_to_try}__part_{part_index}"
             variant_data = {
                 "story_id": story_id,
-                "voice_id": selected_voice_to_try,
+                "voice_id": save_voice_key,
                 "audio_url": audio_url
             }
             supabase.table("story_audio_variants").upsert(variant_data, on_conflict="story_id,voice_id").execute()
             
-            # If George (default voice), also update the master story audio_url
-            if selected_voice_to_try == "JBFqnCBsd6RMkjVDRZzb":
+            if part_index == 0 and selected_voice_to_try == "JBFqnCBsd6RMkjVDRZzb":
                 supabase.table("stories").update({"audio_url": audio_url}).eq("id", story_id).execute()
         except Exception as e:
             print(f"Error caching variant: {e}")
     
-    return {"audio_url": audio_url, "cached": False, "voice_id": selected_voice_to_try}
+    return {
+        "audio_url": audio_url,
+        "cached": False,
+        "voice_id": selected_voice_to_try,
+        "part_index": part_index,
+        "total_parts": total_parts,
+        "part_duration": part_duration,
+        "total_duration": total_duration,
+        "has_next_part": has_next_part,
+        "chunk_durations": chunk_durations
+    }
 
 @app.post("/api/seed-classic-stories")
 async def seed_classic_stories():

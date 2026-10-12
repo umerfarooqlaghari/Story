@@ -12,10 +12,15 @@ import {
   Switch,
   Alert,
   Linking,
-  Image
+  Image,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../lib/clients';
+import { API_BASE_URL } from '../lib/config';
 import { useSubscription } from '../hooks/useSubscription';
 import { clearUserSession } from '../lib/auth';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -28,6 +33,24 @@ import {
 } from '../lib/bookmarks';
 
 // Custom SVG Icons
+const GlobeIcon = ({ size = 16, color = '#f59e0b' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <Circle cx="12" cy="12" r="10" />
+    <Path d="M12 2a14.5 14.5 0 0 0 0 20M12 2a14.5 14.5 0 0 1 0 20M2 12h20" />
+  </Svg>
+);
+
+const LockIcon = ({ size = 16, color = '#6366f1' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zM7 11V7a5 5 0 0 1 10 0v4" />
+  </Svg>
+);
+
+const UploadIcon = ({ size = 16, color = '#f59e0b' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+  </Svg>
+);
 const BookmarkIcon = ({ size = 18, color = '#dc2626' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
     <Path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -218,6 +241,25 @@ export default function HomeScreen({ navigation }: any) {
   // Bookmarks state (persisted listening and reading progress)
   const [bookmarks, setBookmarks] = useState<Record<string, StoryBookmark>>({});
 
+  // Add Books Modal State
+  const [addBooksModalVisible, setAddBooksModalVisible] = useState(false);
+  const [addBooksTab, setAddBooksTab] = useState<'request' | 'publish' | 'dreamweaver'>('request');
+
+  // Request Form State
+  const [reqTitle, setReqTitle] = useState('');
+  const [reqAuthor, setReqAuthor] = useState('');
+  const [reqCategory, setReqCategory] = useState('Bedtime Classics');
+  const [reqNotes, setReqNotes] = useState('');
+  const [reqLoading, setReqLoading] = useState(false);
+
+  // Publish Form State
+  const [pubTitle, setPubTitle] = useState('');
+  const [pubCategory, setPubCategory] = useState('Fairy Tales');
+  const [pubContent, setPubContent] = useState('');
+  const [pubIsPublic, setPubIsPublic] = useState(true);
+  const [pubLoading, setPubLoading] = useState(false);
+  const [pubFileName, setPubFileName] = useState<string | null>(null);
+
   useEffect(() => {
     fetchStories();
     getAllBookmarks().then(setBookmarks);
@@ -237,34 +279,28 @@ export default function HomeScreen({ navigation }: any) {
         .order('created_at', { ascending: true });
 
       if (data && data.length > 0) {
-        // Group the 20 stories by their 4 categories
-        const categoryOrder = ['Fairy Tales', 'Bedtime Classics', 'Adventure & Magic', 'Fables & Legends'];
-        const grouped: Record<string, StoryBook[]> = {
-          'Fairy Tales': [],
-          'Bedtime Classics': [],
-          'Adventure & Magic': [],
-          'Fables & Legends': []
-        };
+        // Dynamic category ordering including classic shelves and community/custom shelves
+        const defaultOrder = ['Fairy Tales', 'Bedtime Classics', 'Adventure & Magic', 'Fables & Legends', 'Community Stories'];
+        const extraCats = Array.from(new Set(data.map((s: any) => s.category).filter((c: any) => c && !defaultOrder.includes(c)))) as string[];
+        const categoryOrder = [...defaultOrder, ...extraCats];
+        const grouped: Record<string, StoryBook[]> = {};
+        categoryOrder.forEach((c) => { grouped[c] = []; });
 
         data.forEach((s) => {
-          const cat = s.category || 'Fairy Tales';
+          const cat = s.category && grouped[s.category] ? s.category : 'Fairy Tales';
           const style = STORY_COVERS[s.title] || DEFAULT_COVER;
 
           const storyBook: StoryBook = {
             id: s.id,
             title: s.title,
-            author: s.author || 'Classic Author',
+            author: s.author || (s.first_name ? `${s.first_name} ${s.last_name || ''}`.trim() : 'StoryTime Author'),
             category: cat,
             content: s.content || '',
             audio_url: s.audio_url,
             coverStyle: style
           };
 
-          if (grouped[cat]) {
-            grouped[cat].push(storyBook);
-          } else {
-            grouped['Fairy Tales'].push(storyBook);
-          }
+          grouped[cat].push(storyBook);
         });
 
         const formattedShelves = categoryOrder
@@ -280,6 +316,100 @@ export default function HomeScreen({ navigation }: any) {
       console.log('Error fetching stories:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePickTxtFile = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['text/plain', 'text/*'],
+        copyToCacheDirectory: true,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        const asset = res.assets[0];
+        setPubFileName(asset.name);
+        if (!pubTitle) {
+          const clean = asset.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+          setPubTitle(clean.charAt(0).toUpperCase() + clean.slice(1));
+        }
+        const response = await fetch(asset.uri);
+        const text = await response.text();
+        if (text) {
+          setPubContent(text);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('File Picker', 'Could not open file. You can paste your story directly.');
+    }
+  };
+
+  const handleBookRequestSubmit = async () => {
+    if (!reqTitle.trim()) {
+      Alert.alert('Required', 'Please enter a book title.');
+      return;
+    }
+    setReqLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/request-book`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user?.id || null,
+          email: user?.email || null,
+          first_name: user?.first_name || '',
+          last_name: user?.last_name || '',
+          title: reqTitle.trim(),
+          author: reqAuthor.trim(),
+          category: reqCategory,
+          notes: reqNotes.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Request failed.');
+      Alert.alert('Request Sent!', data.message || `We have received your request for "${reqTitle}"!`);
+      setReqTitle('');
+      setReqAuthor('');
+      setReqNotes('');
+      setAddBooksModalVisible(false);
+    } catch (err: any) {
+      Alert.alert('Submission Error', err.message || 'Could not submit request.');
+    } finally {
+      setReqLoading(false);
+    }
+  };
+
+  const handlePublishStorySubmit = async () => {
+    if (!pubTitle.trim() || !pubContent.trim()) {
+      Alert.alert('Required', 'Please enter both a title and story text.');
+      return;
+    }
+    setPubLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/add-user-story`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user?.id || null,
+          first_name: user?.first_name || '',
+          last_name: user?.last_name || '',
+          title: pubTitle.trim(),
+          category: pubCategory,
+          content: pubContent.trim(),
+          is_public: pubIsPublic
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to publish story.');
+      Alert.alert('Story Published!', data.message);
+      setPubTitle('');
+      setPubContent('');
+      setPubFileName(null);
+      setAddBooksModalVisible(false);
+      fetchStories();
+    } catch (err: any) {
+      Alert.alert('Publishing Error', err.message || 'Could not publish story.');
+    } finally {
+      setPubLoading(false);
     }
   };
 
@@ -439,7 +569,7 @@ export default function HomeScreen({ navigation }: any) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <UserIcon size={13} color={user ? (isNightMode ? '#38bdf8' : '#0f172a') : '#64748b'} />
               <Text style={[styles.profilePillText, user && { color: isNightMode ? '#ffffff' : '#0f172a', fontWeight: '700' }]}>
-                {user ? (user.email ? user.email.split('@')[0] : 'Profile') : 'Sign In'}
+                {user ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user.email ? user.email.split('@')[0] : 'Profile')) : 'Sign In'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -499,32 +629,6 @@ export default function HomeScreen({ navigation }: any) {
                   >
                     {shelf.books.map((book) => renderBookCover(book))}
                   </ScrollView>
-
-                  {/* Glass Acrylic Railing */}
-                  <View
-                    style={[
-                      styles.acrylicRailing,
-                      {
-                        backgroundColor: config.acrylicColor,
-                        borderColor: config.acrylicBorder
-                      }
-                    ]}
-                    pointerEvents="none"
-                  >
-                    <View style={styles.metallicScrewPin}>
-                      <View style={styles.screwInnerHighlight}>
-                        <View style={styles.screwSlotLine} />
-                      </View>
-                    </View>
-
-                    <CrownIcon size={13} color="#78350f" />
-
-                    <View style={styles.metallicScrewPin}>
-                      <View style={styles.screwInnerHighlight}>
-                        <View style={styles.screwSlotLine} />
-                      </View>
-                    </View>
-                  </View>
                 </View>
               </View>
             );
@@ -539,7 +643,7 @@ export default function HomeScreen({ navigation }: any) {
         <TouchableOpacity
           activeOpacity={0.88}
           style={[styles.addBooksButton, isNightMode && { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 }]}
-          onPress={() => navigation.navigate('GenerateStory')}
+          onPress={() => setAddBooksModalVisible(true)}
         >
           <Text style={styles.addBooksButtonText}>Add Books</Text>
         </TouchableOpacity>
@@ -717,7 +821,7 @@ export default function HomeScreen({ navigation }: any) {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                   <UserIcon size={16} color={isNightMode ? '#38bdf8' : '#0f172a'} />
                   <Text style={[styles.accountEmailText, { color: isNightMode ? '#ffffff' : '#0f172a' }]} numberOfLines={1}>
-                    {user?.email || 'Guest Listener'}
+                    {user ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email) : 'Guest Listener'}
                   </Text>
                 </View>
 
@@ -969,6 +1073,299 @@ export default function HomeScreen({ navigation }: any) {
 
             <View style={{ height: 40 }} />
           </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ================= ADD BOOKS MODAL (REQUEST, PUBLISH, DREAMWEAVER) ================= */}
+      <Modal
+        visible={addBooksModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAddBooksModalVisible(false)}
+      >
+        <SafeAreaView style={[styles.detailModalSafe, { backgroundColor: isNightMode ? '#0b0f19' : '#ffffff' }]}>
+          {/* Header */}
+          <View style={styles.detailModalHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={[styles.menuItemIconWrap, { backgroundColor: '#fef3c7' }]}>
+                <SparkleIcon size={16} color="#d97706" />
+              </View>
+              <Text style={[styles.detailModalTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                Add Books
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setAddBooksModalVisible(false)} style={styles.detailCloseBtn}>
+              <CloseIcon size={20} color={isNightMode ? '#ffffff' : '#0f172a'} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Segmented Tab Bar */}
+          <View style={[styles.addBooksTabBar, isNightMode && { backgroundColor: '#1e293b' }]}>
+            <TouchableOpacity
+              onPress={() => setAddBooksTab('request')}
+              style={[styles.addBooksTabBtn, addBooksTab === 'request' && styles.addBooksTabBtnActive]}
+            >
+              <Text style={[styles.addBooksTabBtnText, addBooksTab === 'request' && styles.addBooksTabBtnTextActive]}>
+                Request Book
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setAddBooksTab('publish')}
+              style={[styles.addBooksTabBtn, addBooksTab === 'publish' && styles.addBooksTabBtnActive]}
+            >
+              <Text style={[styles.addBooksTabBtnText, addBooksTab === 'publish' && styles.addBooksTabBtnTextActive]}>
+                Publish Story
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setAddBooksTab('dreamweaver')}
+              style={[styles.addBooksTabBtn, addBooksTab === 'dreamweaver' && styles.addBooksTabBtnActive]}
+            >
+              <Text style={[styles.addBooksTabBtnText, addBooksTab === 'dreamweaver' && styles.addBooksTabBtnTextActive]}>
+                AI Tale
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            <ScrollView contentContainerStyle={styles.detailModalBody} showsVerticalScrollIndicator={false}>
+              
+              {/* TAB 1: REQUEST A BOOK */}
+              {addBooksTab === 'request' && (
+                <View style={{ gap: 14 }}>
+                  <Text style={[styles.addBooksIntroText, { color: isNightMode ? '#94a3b8' : '#64748b' }]}>
+                    Missing a childhood classic or bedtime favourite? Tell us what you'd like added and our narrators will review it for the library!
+                  </Text>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155' }]}>Book Title *</Text>
+                    <TextInput
+                      style={[styles.formInput, isNightMode && styles.formInputDark]}
+                      placeholder="e.g. The Velveteen Rabbit"
+                      placeholderTextColor="#94a3b8"
+                      value={reqTitle}
+                      onChangeText={setReqTitle}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155' }]}>Author / Series</Text>
+                    <TextInput
+                      style={[styles.formInput, isNightMode && styles.formInputDark]}
+                      placeholder="e.g. Margery Williams"
+                      placeholderTextColor="#94a3b8"
+                      value={reqAuthor}
+                      onChangeText={setReqAuthor}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155' }]}>Preferred Shelf</Text>
+                    <View style={styles.categoryPillsWrap}>
+                      {['Fairy Tales', 'Bedtime Classics', 'Adventure & Magic', 'Fables & Legends'].map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          onPress={() => setReqCategory(c)}
+                          style={[
+                            styles.categoryPill,
+                            reqCategory === c && styles.categoryPillActive,
+                            isNightMode && { backgroundColor: reqCategory === c ? '#0f172a' : '#1e293b' }
+                          ]}
+                        >
+                          <Text style={[
+                            styles.categoryPillText,
+                            reqCategory === c && styles.categoryPillTextActive
+                          ]}>{c}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155' }]}>Notes / Special Wishes</Text>
+                    <TextInput
+                      style={[styles.formInput, styles.formInputMultiline, isNightMode && styles.formInputDark]}
+                      placeholder="Specific moral, adaptation, or notes for our narrator..."
+                      placeholderTextColor="#94a3b8"
+                      multiline
+                      numberOfLines={3}
+                      value={reqNotes}
+                      onChangeText={setReqNotes}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.submitFormBtn, reqLoading && { opacity: 0.7 }]}
+                    onPress={handleBookRequestSubmit}
+                    disabled={reqLoading}
+                  >
+                    {reqLoading ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <Text style={styles.submitFormBtnText}>Submit Book Request</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* TAB 2: PUBLISH YOUR OWN STORY */}
+              {addBooksTab === 'publish' && (
+                <View style={{ gap: 14 }}>
+                  <Text style={[styles.addBooksIntroText, { color: isNightMode ? '#94a3b8' : '#64748b' }]}>
+                    Add your own family bedtime story. Choose whether to make it public for all families or keep it private on your own shelf.
+                  </Text>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155' }]}>Story Title *</Text>
+                    <TextInput
+                      style={[styles.formInput, isNightMode && styles.formInputDark]}
+                      placeholder="e.g. Oliver and the Star Garden"
+                      placeholderTextColor="#94a3b8"
+                      value={pubTitle}
+                      onChangeText={setPubTitle}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155' }]}>Shelf Category</Text>
+                    <View style={styles.categoryPillsWrap}>
+                      {['Fairy Tales', 'Bedtime Classics', 'Adventure & Magic', 'Fables & Legends', 'Community Stories'].map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          onPress={() => setPubCategory(c)}
+                          style={[
+                            styles.categoryPill,
+                            pubCategory === c && styles.categoryPillActive,
+                            isNightMode && { backgroundColor: pubCategory === c ? '#0f172a' : '#1e293b' }
+                          ]}
+                        >
+                          <Text style={[
+                            styles.categoryPillText,
+                            pubCategory === c && styles.categoryPillTextActive
+                          ]}>{c}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Public vs Private Visibility Selector */}
+                  <View style={[styles.visibilityBox, isNightMode && { backgroundColor: '#1e293b', borderColor: '#334155' }]}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155', marginBottom: 8 }]}>
+                      Publishing Visibility
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <TouchableOpacity
+                        onPress={() => setPubIsPublic(true)}
+                        style={[
+                          styles.visibilityCard,
+                          pubIsPublic && styles.visibilityCardActive,
+                          isNightMode && { backgroundColor: pubIsPublic ? '#1e293b' : '#0f172a' }
+                        ]}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <GlobeIcon size={16} color="#d97706" />
+                          <Text style={[styles.visibilityTitle, pubIsPublic && { color: '#d97706', fontWeight: '800' }]}>
+                            Public
+                          </Text>
+                        </View>
+                        <Text style={styles.visibilityDesc}>
+                          All users can read & listen. Community email will be sent from newstory@alpha-devs.cloud.
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => setPubIsPublic(false)}
+                        style={[
+                          styles.visibilityCard,
+                          !pubIsPublic && styles.visibilityCardActive,
+                          isNightMode && { backgroundColor: !pubIsPublic ? '#1e293b' : '#0f172a' }
+                        ]}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <LockIcon size={16} color="#6366f1" />
+                          <Text style={[styles.visibilityTitle, !pubIsPublic && { color: '#6366f1', fontWeight: '800' }]}>
+                            Private
+                          </Text>
+                        </View>
+                        <Text style={styles.visibilityDesc}>
+                          Visible only on your device/account bookshelf. No broadcast emails.
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Pick .txt File Option */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={[styles.formLabel, { color: isNightMode ? '#e2e8f0' : '#334155' }]}>
+                      Story Text *
+                    </Text>
+                    <TouchableOpacity
+                      onPress={handlePickTxtFile}
+                      style={styles.filePickerBtn}
+                    >
+                      <UploadIcon size={14} color="#d97706" />
+                      <Text style={styles.filePickerBtnText}>
+                        {pubFileName ? pubFileName : 'Load from .txt file'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TextInput
+                    style={[styles.formInput, styles.formInputStory, isNightMode && styles.formInputDark]}
+                    placeholder="Once upon a time in a tranquil meadow..."
+                    placeholderTextColor="#94a3b8"
+                    multiline
+                    numberOfLines={6}
+                    value={pubContent}
+                    onChangeText={setPubContent}
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.submitFormBtn, pubLoading && { opacity: 0.7 }]}
+                    onPress={handlePublishStorySubmit}
+                    disabled={pubLoading}
+                  >
+                    {pubLoading ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <Text style={styles.submitFormBtnText}>
+                        {pubIsPublic ? 'Publish & Broadcast Story' : 'Save Private Story'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* TAB 3: AI DREAMWEAVER */}
+              {addBooksTab === 'dreamweaver' && (
+                <View style={{ gap: 16, alignItems: 'center', paddingVertical: 20 }}>
+                  <View style={styles.aiDreamweaverIconWrap}>
+                    <SparkleIcon size={32} color="#f59e0b" />
+                  </View>
+                  <Text style={[styles.aiDreamweaverTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                    AI Story Dreamweaver
+                  </Text>
+                  <Text style={[styles.aiDreamweaverDesc, { color: isNightMode ? '#94a3b8' : '#64748b' }]}>
+                    Let our intelligent narrative engine generate a fully voiced bedtime story tailored with characters, themes, and soothing narration.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.openDreamweaverBtn}
+                    onPress={() => {
+                      setAddBooksModalVisible(false);
+                      navigation.navigate('GenerateStory');
+                    }}
+                  >
+                    <Text style={styles.openDreamweaverBtnText}>Open Dreamweaver Studio</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={{ height: 60 }} />
+            </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -1807,5 +2204,185 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 8,
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  addBooksTabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 14,
+    padding: 4,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  addBooksTabBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  addBooksTabBtnActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  addBooksTabBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  addBooksTabBtnTextActive: {
+    color: '#0f172a',
+  },
+  addBooksIntroText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  formGroup: {
+    gap: 6,
+  },
+  formLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+  },
+  formInputDark: {
+    borderColor: '#334155',
+    backgroundColor: '#1e293b',
+    color: '#ffffff',
+  },
+  formInputMultiline: {
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  formInputStory: {
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  categoryPillsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  categoryPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  categoryPillActive: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
+  },
+  categoryPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  categoryPillTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  visibilityBox: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  visibilityCard: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    gap: 4,
+  },
+  visibilityCardActive: {
+    borderColor: '#f59e0b',
+    backgroundColor: '#fffbeb',
+  },
+  visibilityTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  visibilityDesc: {
+    fontSize: 10,
+    color: '#64748b',
+    lineHeight: 13,
+  },
+  filePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#fef3c7',
+  },
+  filePickerBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  submitFormBtn: {
+    backgroundColor: '#0f172a',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  submitFormBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  aiDreamweaverIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#fef3c7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiDreamweaverTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  aiDreamweaverDesc: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 20,
+  },
+  openDreamweaverBtn: {
+    backgroundColor: '#0f172a',
+    paddingVertical: 13,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    marginTop: 8,
+  },
+  openDreamweaverBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });

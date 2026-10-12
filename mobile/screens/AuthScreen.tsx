@@ -35,6 +35,8 @@ const CloseIcon = ({ size = 12, color = '#dc2626' }: { size?: number; color?: st
 
 export default function AuthScreen({ navigation }: any) {
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'otp' | 'forgot' | 'forgot_otp'>('login');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -101,6 +103,8 @@ export default function AuthScreen({ navigation }: any) {
     setLoading(true);
     try {
       const data = await safeFetch(`${API_BASE_URL}/api/auth/signup-request`, {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         email: email.trim(),
         password: password.trim(),
         confirm_password: confirmPassword.trim()
@@ -129,7 +133,9 @@ export default function AuthScreen({ navigation }: any) {
     try {
       const data = await safeFetch(`${API_BASE_URL}/api/auth/signup-verify`, {
         email: email.trim(),
-        otp_code: otpCode.trim()
+        otp_code: otpCode.trim(),
+        first_name: firstName.trim(),
+        last_name: lastName.trim()
       });
 
       // Persist session to AsyncStorage & notify app!
@@ -138,7 +144,7 @@ export default function AuthScreen({ navigation }: any) {
 
       Alert.alert(
         'Account Activated',
-        `Welcome ${data.user.email}! You are now automatically logged in.`,
+        `Welcome ${data.user.full_name || data.user.email}! You are now automatically logged in.`,
         [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
       );
     } catch (e: any) {
@@ -297,6 +303,32 @@ export default function AuthScreen({ navigation }: any) {
                 >
                   <Text style={[styles.tabText, authMode === 'signup' && styles.activeTabText]}>Sign Up (SES)</Text>
                 </TouchableOpacity>
+              </View>
+            )}
+
+            {/* First & Last Name Fields (Signup only) */}
+            {authMode === 'signup' && (
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>FIRST NAME</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Umer"
+                    placeholderTextColor="#9ca3af"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>LAST NAME</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Farooq"
+                    placeholderTextColor="#9ca3af"
+                    value={lastName}
+                    onChangeText={setLastName}
+                  />
+                </View>
               </View>
             )}
 

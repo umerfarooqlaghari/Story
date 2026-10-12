@@ -112,6 +112,18 @@ export default function PlayerScreen({ route, navigation }: any) {
 
   const timerRef = useRef<any>(null);
 
+  // Multi-part story playback & timing states
+  const initialStoryWords = (story?.content || '').trim().split(/\s+/).filter(Boolean).length;
+  const initialEstimatedDuration = Math.max(60, Math.round((initialStoryWords / 140) * 60));
+
+  const [currentPartIndex, setCurrentPartIndex] = useState(0);
+  const [totalParts, setTotalParts] = useState(1);
+  const [chunkDurations, setChunkDurations] = useState<number[]>([initialEstimatedDuration]);
+  const [totalStoryDuration, setTotalStoryDuration] = useState<number>(initialEstimatedDuration);
+  const [downloadingNextPart, setDownloadingNextPart] = useState(false);
+  const partAudioCacheRef = useRef<{ [key: string]: string }>({});
+  const autoAdvancingRef = useRef(false);
+
   // Scrubber drag & drop states
   const [trackWidth, setTrackWidth] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -121,6 +133,30 @@ export default function PlayerScreen({ route, navigation }: any) {
   const [savedBookmark, setSavedBookmark] = useState<StoryBookmark | null>(null);
   const [hasDismissedBookmark, setHasDismissedBookmark] = useState(false);
   const lastSavedTimeRef = useRef<number>(0);
+
+  // Helper to compute cumulative offsets for each part
+  const getPartOffsets = (durations: number[]) => {
+    const offsets = [0];
+    for (let i = 0; i < durations.length - 1; i++) {
+      offsets.push(offsets[i] + (durations[i] || 60));
+    }
+    return offsets;
+  };
+
+  const partOffsets = getPartOffsets(chunkDurations);
+  const currentPartOffset = partOffsets[currentPartIndex] || 0;
+
+  // Full story duration and overall progress
+  const effectiveDuration = totalStoryDuration > 0 ? totalStoryDuration : (status.duration || 0);
+  const overallCurrentTime = currentPartOffset + (status.currentTime || 0);
+
+  const displayTime = isScrubbing
+    ? scrubProgress * effectiveDuration
+    : overallCurrentTime;
+
+  const currentProgress = effectiveDuration > 0
+    ? Math.max(0, Math.min(1, displayTime / effectiveDuration))
+    : 0;
 
   // Load existing bookmark on mount
   useEffect(() => {
@@ -133,10 +169,10 @@ export default function PlayerScreen({ route, navigation }: any) {
     }
   }, [story?.id, story?.title]);
 
-  // Auto-save audio bookmark progress as playback advances
+  // Auto-save audio bookmark progress as overall story playback advances
   useEffect(() => {
-    const curTime = status.currentTime || 0;
-    const dur = status.duration || 0;
+    const curTime = overallCurrentTime;
+    const dur = effectiveDuration;
 
     // Save every 4 seconds while playing
     if (status.playing && curTime > 2 && Math.abs(curTime - lastSavedTimeRef.current) >= 4) {
@@ -150,28 +186,189 @@ export default function PlayerScreen({ route, navigation }: any) {
       });
     }
 
-    // Story finished: automatically clear the bookmark
-    if (dur > 0 && curTime >= dur - 2) {
+    // Story finished: automatically clear the bookmark when reaching the very end of final part
+    if (dur > 0 && curTime >= dur - 2 && currentPartIndex === totalParts - 1) {
       deleteStoryBookmark(story?.id, story?.title);
       setSavedBookmark(null);
     }
-  }, [status.currentTime, status.playing, status.duration, activeVoice, story?.id, story?.title]);
+  }, [overallCurrentTime, status.playing, effectiveDuration, activeVoice, story?.id, story?.title, currentPartIndex, totalParts]);
+
+  // Auto-advance to next part when current part nears completion or ends
+  useEffect(() => {
+    const curTime = status.currentTime || 0;
+    const dur = status.duration || 0;
+    const hasNext = currentPartIndex < totalParts - 1;
+
+    if (dur > 0 && hasNext && !autoAdvancingRef.current) {
+      if (curTime >= dur - 1.2 || status.playbackState === 'ended') {
+        autoAdvancingRef.current = true;
+        loadStoryPart(currentPartIndex + 1, activeVoice, true).then(() => {
+          setTimeout(() => {
+            autoAdvancingRef.current = false;
+          }, 2000);
+        });
+      }
+    }
+  }, [status.currentTime, status.duration, status.playbackState, currentPartIndex, totalParts, activeVoice]);
+
+  const prefetchNextPart = async (nextPartIdx: number, voiceId: string) => {
+    if (nextPartIdx >= totalParts) return;
+    const cacheKey = `${story?.id || story?.title}_${voiceId}_part${nextPartIdx}`;
+    if (partAudioCacheRef.current[cacheKey]) return;
+
+    try {
+      setDownloadingNextPart(true);
+      const res = await fetch(`${API_BASE_URL}/api/get-or-generate-audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          story_id: story?.id,
+          voice_id: voiceId,
+          text_content: story?.content || '',
+          part_index: nextPartIdx
+        })
+      });
+      const data = await res.json();
+      if (data.audio_url) {
+        partAudioCacheRef.current[cacheKey] = data.audio_url;
+        if (data.total_duration) setTotalStoryDuration(data.total_duration);
+        if (data.chunk_durations && Array.isArray(data.chunk_durations)) {
+          setChunkDurations(data.chunk_durations);
+        }
+      }
+    } catch (e) {
+      console.log('Prefetch next part error:', e);
+    } finally {
+      setDownloadingNextPart(false);
+    }
+  };
+
+  const loadStoryPart = async (
+    partIdx: number,
+    voiceId: string,
+    autoPlay = true,
+    seekToOffset: number | null = null
+  ) => {
+    if (!isPremium && trialSecondsRemaining <= 0) {
+      navigation.navigate('Paywall');
+      return;
+    }
+
+    const cacheKey = `${story?.id || story?.title}_${voiceId}_part${partIdx}`;
+    const cachedUrl = partAudioCacheRef.current[cacheKey];
+
+    if (cachedUrl) {
+      setCurrentPartIndex(partIdx);
+      setAudioUrl(cachedUrl);
+      try {
+        player.replace({ uri: cachedUrl });
+        if (seekToOffset !== null && seekToOffset > 0) {
+          await player.seekTo(seekToOffset);
+        }
+        if (autoPlay) {
+          player.play();
+        }
+      } catch (err) {
+        console.log('Play cached part error:', err);
+      }
+      if (partIdx + 1 < totalParts) {
+        prefetchNextPart(partIdx + 1, voiceId);
+      }
+      return;
+    }
+
+    setLoadingAudio(true);
+    setStatusText(partIdx === 0 ? 'Preparing narration...' : `Downloading Part ${partIdx + 1}...`);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/get-or-generate-audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          story_id: story?.id,
+          voice_id: voiceId,
+          text_content: story?.content || 'Once upon a time...',
+          part_index: partIdx
+        })
+      });
+
+      const data = await res.json();
+      if (data.audio_url) {
+        partAudioCacheRef.current[cacheKey] = data.audio_url;
+        if (data.total_parts) setTotalParts(data.total_parts);
+        if (data.total_duration) setTotalStoryDuration(data.total_duration);
+        if (data.chunk_durations && Array.isArray(data.chunk_durations)) {
+          setChunkDurations(data.chunk_durations);
+        }
+
+        setCurrentPartIndex(partIdx);
+        setAudioUrl(data.audio_url);
+        setStatusText(
+          data.total_parts > 1
+            ? `Part ${partIdx + 1} of ${data.total_parts}`
+            : data.cached ? 'Loaded from audio cache' : 'Freshly narrated by ElevenLabs'
+        );
+
+        try {
+          player.replace({ uri: data.audio_url });
+          if (seekToOffset !== null && seekToOffset > 0) {
+            await player.seekTo(seekToOffset);
+          }
+          if (autoPlay) {
+            player.play();
+          }
+        } catch (playErr) {
+          console.log('Audio replace/play error:', playErr);
+        }
+
+        if (data.has_next_part) {
+          prefetchNextPart(partIdx + 1, voiceId);
+        }
+      } else {
+        setStatusText('Could not load audio variant');
+      }
+    } catch (e: any) {
+      console.log('Error loading voice part:', e);
+      setStatusText('Audio service unavailable');
+    } finally {
+      setLoadingAudio(false);
+    }
+  };
+
+  const seekToOverallTime = async (targetOverallTime: number) => {
+    let targetPart = 0;
+    let offsetInPart = targetOverallTime;
+    for (let i = 0; i < chunkDurations.length; i++) {
+      const pStart = partOffsets[i] || 0;
+      const pDur = chunkDurations[i] || 60;
+      if (targetOverallTime >= pStart && (targetOverallTime < pStart + pDur || i === chunkDurations.length - 1)) {
+        targetPart = i;
+        offsetInPart = Math.max(0, targetOverallTime - pStart);
+        break;
+      }
+    }
+
+    if (targetPart === currentPartIndex) {
+      try {
+        await player.seekTo(offsetInPart);
+      } catch (e) {
+        console.log('Seek error:', e);
+      }
+    } else {
+      await loadStoryPart(targetPart, activeVoice, status.playing, offsetInPart);
+    }
+  };
 
   const handleResumeBookmark = async () => {
     if (!savedBookmark) return;
     setHasDismissedBookmark(true);
-    const target = savedBookmark.audioPosition;
-    try {
-      await player.seekTo(target);
-      player.play();
-    } catch (e) {
-      console.log('Error seeking to bookmark:', e);
-    }
+    await seekToOverallTime(savedBookmark.audioPosition);
+    player.play();
   };
 
   const handleManualBookmark = async () => {
-    const curTime = status.currentTime || 0;
-    const dur = status.duration || 0;
+    const curTime = overallCurrentTime;
+    const dur = effectiveDuration;
     await saveStoryBookmark({
       storyId: story?.id,
       storyTitle: story?.title,
@@ -204,7 +401,7 @@ export default function PlayerScreen({ route, navigation }: any) {
     });
   }, []);
 
-  // Stop previous story on story change or on unmount
+  // Story initialization & voice reset
   useEffect(() => {
     try {
       player.pause();
@@ -213,14 +410,10 @@ export default function PlayerScreen({ route, navigation }: any) {
     setAudioUrl(story?.audio_url || null);
     setActiveVoice('JBFqnCBsd6RMkjVDRZzb');
     setStatusText('');
+    setCurrentPartIndex(0);
 
-    if (story?.audio_url) {
-      try {
-        player.replace({ uri: story.audio_url });
-      } catch (err) {
-        console.log('Player replace error on story load:', err);
-      }
-    }
+    // Initial load of part 0 metadata and audio
+    loadStoryPart(0, 'JBFqnCBsd6RMkjVDRZzb', false);
 
     return () => {
       try {
@@ -268,53 +461,8 @@ export default function PlayerScreen({ route, navigation }: any) {
   };
 
   const fetchAudioForVoice = async (voiceId: string, autoPlay = true) => {
-    if (!isPremium && trialSecondsRemaining <= 0) {
-      navigation.navigate('Paywall');
-      return;
-    }
-
-    // Immediately stop current audio
-    try {
-      player.pause();
-    } catch {}
-
     setActiveVoice(voiceId);
-    setLoadingAudio(true);
-    setStatusText('Preparing narration...');
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/get-or-generate-audio`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          story_id: story?.id,
-          voice_id: voiceId,
-          text_content: story?.content || 'Once upon a time...'
-        })
-      });
-
-      const data = await res.json();
-      if (data.audio_url) {
-        setAudioUrl(data.audio_url);
-        setStatusText(data.cached ? 'Loaded from audio cache' : 'Freshly narrated by ElevenLabs');
-
-        try {
-          player.replace({ uri: data.audio_url });
-          if (autoPlay) {
-            player.play();
-          }
-        } catch (playErr) {
-          console.log('Audio replace/play error:', playErr);
-        }
-      } else {
-        setStatusText('Could not load audio variant');
-      }
-    } catch (e: any) {
-      console.log('Error loading voice:', e);
-      setStatusText('Audio service unavailable');
-    } finally {
-      setLoadingAudio(false);
-    }
+    await loadStoryPart(0, voiceId, autoPlay);
   };
 
   const handlePlayToggle = async () => {
@@ -338,61 +486,37 @@ export default function PlayerScreen({ route, navigation }: any) {
   const handleStop = async () => {
     try {
       player.pause();
-      await player.seekTo(0);
+      await seekToOverallTime(0);
     } catch (e) {
       console.log('Stop error:', e);
     }
   };
 
   const handleRewind = async (seconds: number = 10) => {
-    try {
-      const current = status.currentTime || 0;
-      const target = Math.max(0, current - seconds);
-      await player.seekTo(target);
-    } catch (e) {
-      console.log('Rewind error:', e);
-    }
+    const targetOverall = Math.max(0, overallCurrentTime - seconds);
+    await seekToOverallTime(targetOverall);
   };
 
   const handleFastForward = async (seconds: number = 10) => {
-    try {
-      const current = status.currentTime || 0;
-      const total = status.duration || 0;
-      const target = total > 0 ? Math.min(total, current + seconds) : current + seconds;
-      await player.seekTo(target);
-    } catch (e) {
-      console.log('Fast forward error:', e);
-    }
+    const targetOverall = Math.min(effectiveDuration, overallCurrentTime + seconds);
+    await seekToOverallTime(targetOverall);
   };
 
   const handleBack = () => {
     try {
       player.pause();
     } catch {}
-    const curTime = status.currentTime || 0;
-    if (curTime > 2) {
+    if (overallCurrentTime > 2) {
       saveStoryBookmark({
         storyId: story?.id,
         storyTitle: story?.title,
-        audioPosition: curTime,
-        audioDuration: status.duration || 0,
+        audioPosition: overallCurrentTime,
+        audioDuration: effectiveDuration,
         voiceId: activeVoice
       });
     }
     navigation.goBack();
   };
-
-  // Scrubber drag-and-drop gesture handling
-  const duration = status.duration || 0;
-  const currentProgress = isScrubbing
-    ? scrubProgress
-    : duration > 0
-    ? (status.currentTime || 0) / duration
-    : 0;
-
-  const displayTime = isScrubbing
-    ? scrubProgress * duration
-    : (status.currentTime || 0);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -415,14 +539,10 @@ export default function PlayerScreen({ route, navigation }: any) {
       },
       onPanResponderRelease: async (evt) => {
         const touchX = evt.nativeEvent.locationX;
-        if (trackWidth > 0 && duration > 0) {
+        if (trackWidth > 0 && effectiveDuration > 0) {
           const ratio = Math.max(0, Math.min(1, touchX / trackWidth));
-          const seekTarget = ratio * duration;
-          try {
-            await player.seekTo(seekTarget);
-          } catch (e) {
-            console.log('Seek error:', e);
-          }
+          const targetOverall = ratio * effectiveDuration;
+          await seekToOverallTime(targetOverall);
         }
         setIsScrubbing(false);
       },
@@ -599,12 +719,31 @@ export default function PlayerScreen({ route, navigation }: any) {
             </View>
           ) : (
             <View style={styles.playerControls}>
-              {/* Interactive Timeline Scrubber (Drag & Drop Rewind/Fast-Forward) */}
+              {/* Part Indicator & Prefetch Status */}
+              {totalParts > 1 && (
+                <View style={styles.partsHeaderRow}>
+                  <View style={styles.partIndicatorBadge}>
+                    <Text style={styles.partIndicatorText}>Part {currentPartIndex + 1} of {totalParts}</Text>
+                  </View>
+                  {downloadingNextPart ? (
+                    <View style={styles.prefetchIndicator}>
+                      <ActivityIndicator size="small" color="#6366f1" style={{ transform: [{ scale: 0.65 }] }} />
+                      <Text style={styles.prefetchText}>Buffering next part...</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.partDurationNote}>
+                      {formatAudioTime(chunkDurations[currentPartIndex] || 0)} this segment
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Interactive Timeline Scrubber (Full Story Timeline) */}
               <View style={styles.scrubberSection}>
                 <View style={styles.timeRow}>
                   <Text style={styles.timeText}>{formatAudioTime(displayTime)}</Text>
                   <Text style={styles.timeTotalText}>
-                    {duration > 0 ? formatAudioTime(duration) : '0:00'}
+                    {effectiveDuration > 0 ? formatAudioTime(effectiveDuration) : '0:00'}
                   </Text>
                 </View>
 
@@ -1271,5 +1410,40 @@ const styles = StyleSheet.create({
     color: '#27272a',
     fontFamily: 'Georgia',
     letterSpacing: 0.2
+  },
+  partsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 2
+  },
+  partIndicatorBadge: {
+    backgroundColor: '#eef2ff',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#c7d2fe'
+  },
+  partIndicatorText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4338ca'
+  },
+  partDurationNote: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b'
+  },
+  prefetchIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  prefetchText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6366f1'
   }
 });

@@ -32,7 +32,11 @@ import {
   MessageSquare,
   Headphones,
   Bookmark,
-  Trash2
+  Trash2,
+  UploadCloud,
+  Globe,
+  Send,
+  EyeOff
 } from 'lucide-react'
 import {
   saveStoryBookmark,
@@ -80,6 +84,9 @@ interface Story {
   author: string
   content: string
   is_classic: boolean
+  is_public?: boolean
+  user_id?: string
+  cover_url?: string
   audio_url?: string
 }
 
@@ -93,6 +100,9 @@ export default function Home() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioLoading, setAudioLoading] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [webPartIndex, setWebPartIndex] = useState(0)
+  const [webTotalParts, setWebTotalParts] = useState(1)
+  const [webTotalDuration, setWebTotalDuration] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // Trial & Subscription State (10-minute trial = 600 seconds)
@@ -121,6 +131,8 @@ export default function Home() {
 
   // Auth Form State
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'otp' | 'forgot' | 'forgot_otp'>('login')
+  const [authFirstName, setAuthFirstName] = useState('')
+  const [authLastName, setAuthLastName] = useState('')
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authConfirmPassword, setAuthConfirmPassword] = useState('')
@@ -129,8 +141,28 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState<string | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
 
+  // Add Books Modal State
+  const [isAddBooksOpen, setIsAddBooksOpen] = useState(false)
+  const [addBooksTab, setAddBooksTab] = useState<'request' | 'publish' | 'dreamweaver'>('request')
+
+  // Request a Book Form State
+  const [reqTitle, setReqTitle] = useState('')
+  const [reqAuthor, setReqAuthor] = useState('')
+  const [reqCategory, setReqCategory] = useState('Bedtime Classics')
+  const [reqNotes, setReqNotes] = useState('')
+  const [reqLoading, setReqLoading] = useState(false)
+  const [reqSuccess, setReqSuccess] = useState<string | null>(null)
+
+  // Publish Story Form State
+  const [pubTitle, setPubTitle] = useState('')
+  const [pubCategory, setPubCategory] = useState('Fairy Tales')
+  const [pubContent, setPubContent] = useState('')
+  const [pubIsPublic, setPubIsPublic] = useState(true)
+  const [pubLoading, setPubLoading] = useState(false)
+  const [pubSuccess, setPubSuccess] = useState<string | null>(null)
+
   // User state
-  const [user, setUser] = useState<{ id: string; email: string } | null>(null)
+  const [user, setUser] = useState<{ id: string; email: string; first_name?: string; last_name?: string; full_name?: string } | null>(null)
 
   // Live Password Validation Checks
   const hasPassword = authPassword.length > 0
@@ -232,7 +264,49 @@ export default function Home() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`
   }
 
-  // Handle Audio Generation / Playback
+  // Handle Audio Generation / Playback with Multi-part streaming
+  const loadWebStoryPart = async (story: Story, partIdx: number, voiceId: string, autoPlay = true) => {
+    setPlayingStoryId(story.id)
+    setWebPartIndex(partIdx)
+    setAudioLoading(true)
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/get-or-generate-audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          story_id: story.id,
+          voice_id: voiceId,
+          text_content: story.content,
+          part_index: partIdx
+        })
+      })
+      const data = await res.json()
+      if (data.audio_url) {
+        setAudioUrl(data.audio_url)
+        if (data.total_parts) setWebTotalParts(data.total_parts)
+        if (data.total_duration) setWebTotalDuration(data.total_duration)
+        if (audioRef.current) {
+          audioRef.current.src = data.audio_url
+          if (partIdx === 0) {
+            const existing = bookmarks[story.id]
+            if (existing && existing.audioPosition > 3) {
+              audioRef.current.currentTime = existing.audioPosition
+            }
+          }
+          if (autoPlay) {
+            audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {})
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Audio error:", err)
+      alert("Audio generation currently unavailable. Please try again.")
+    } finally {
+      setAudioLoading(false)
+    }
+  }
+
   const handlePlayToggle = async (story: Story, overrideVoice?: string) => {
     const voiceToUse = overrideVoice || selectedVoice
 
@@ -258,38 +332,7 @@ export default function Home() {
       setIsPlaying(false)
     }
 
-    // New story audio request
-    setPlayingStoryId(story.id)
-    setAudioLoading(true)
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/get-or-generate-audio`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          story_id: story.id,
-          voice_id: voiceToUse,
-          text_content: story.content
-        })
-      })
-      const data = await res.json()
-      if (data.audio_url) {
-        setAudioUrl(data.audio_url)
-        if (audioRef.current) {
-          audioRef.current.src = data.audio_url
-          const existing = bookmarks[story.id]
-          if (existing && existing.audioPosition > 3) {
-            audioRef.current.currentTime = existing.audioPosition
-          }
-          audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {})
-        }
-      }
-    } catch (err) {
-      console.error("Audio error:", err)
-      alert("Audio generation currently unavailable. Please try again.")
-    } finally {
-      setAudioLoading(false)
-    }
+    await loadWebStoryPart(story, 0, voiceToUse, true)
   }
 
   const handleVoiceChange = (newVoiceId: string) => {
@@ -319,6 +362,8 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          first_name: authFirstName.trim(),
+          last_name: authLastName.trim(),
           email: authEmail.trim(),
           password: authPassword.trim(),
           confirm_password: authConfirmPassword.trim()
@@ -348,7 +393,9 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: authEmail.trim(),
-          otp_code: authOtpCode.trim()
+          otp_code: authOtpCode.trim(),
+          first_name: authFirstName.trim(),
+          last_name: authLastName.trim()
         })
       })
       const data = await res.json()
@@ -362,12 +409,102 @@ export default function Home() {
 
       setIsAuthOpen(false)
       fetchSubscriptionStatus(data.user.id)
-      alert(`Welcome ${data.user.email}! You are automatically logged in with a 30-day session.`)
+      alert(`Welcome ${data.user.full_name || data.user.email}! You are automatically logged in with a 30-day session.`)
     } catch (err: any) {
       setAuthError(err.message)
     } finally {
       setAuthLoading(false)
     }
+  }
+
+  // Book Request Handler
+  const handleBookRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!reqTitle.trim()) {
+      alert("Please provide the title of the story you'd like to request.")
+      return
+    }
+    setReqLoading(true)
+    setReqSuccess(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/request-book`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user?.id || null,
+          email: user?.email || authEmail || null,
+          first_name: user?.first_name || authFirstName || "",
+          last_name: user?.last_name || authLastName || "",
+          title: reqTitle.trim(),
+          author: reqAuthor.trim(),
+          category: reqCategory,
+          notes: reqNotes.trim()
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Request failed.")
+      setReqSuccess(data.message || `Request for "${reqTitle}" submitted!`)
+      setReqTitle('')
+      setReqAuthor('')
+      setReqNotes('')
+    } catch (err: any) {
+      alert(err.message || "Could not submit book request.")
+    } finally {
+      setReqLoading(false)
+    }
+  }
+
+  // Publish Story Handler
+  const handlePublishStorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pubTitle.trim() || !pubContent.trim()) {
+      alert("Please enter a title and story text.")
+      return
+    }
+    setPubLoading(true)
+    setPubSuccess(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/add-user-story`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user?.id || null,
+          first_name: user?.first_name || authFirstName || "",
+          last_name: user?.last_name || authLastName || "",
+          title: pubTitle.trim(),
+          category: pubCategory,
+          content: pubContent.trim(),
+          is_public: pubIsPublic
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Publishing story failed.")
+      setPubSuccess(data.message)
+      setPubTitle('')
+      setPubContent('')
+      fetchStories()
+    } catch (err: any) {
+      alert(err.message || "Failed to publish story.")
+    } finally {
+      setPubLoading(false)
+    }
+  }
+
+  const handleTxtFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const text = event.target?.result as string
+      if (text) {
+        setPubContent(text)
+        if (!pubTitle) {
+          const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
+          setPubTitle(cleanName.charAt(0).toUpperCase() + cleanName.slice(1))
+        }
+      }
+    }
+    reader.readAsText(file)
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -469,22 +606,16 @@ export default function Home() {
     }
   }
 
-  // Organize the 20 classic stories into the 4 mobile bookshelf categories
-  const categories = ['Fairy Tales', 'Bedtime Classics', 'Adventure & Magic', 'Fables & Legends']
-  const groupedShelves: Record<string, Story[]> = {
-    'Fairy Tales': [],
-    'Bedtime Classics': [],
-    'Adventure & Magic': [],
-    'Fables & Legends': []
-  }
+  // Organize stories into bookshelf categories (standard + community/custom)
+  const defaultCategories = ['Fairy Tales', 'Bedtime Classics', 'Adventure & Magic', 'Fables & Legends']
+  const extraCategories = Array.from(new Set(stories.map(s => s.category).filter(c => c && !defaultCategories.includes(c))))
+  const categories = [...defaultCategories, ...extraCategories]
+  const groupedShelves: Record<string, Story[]> = {}
+  categories.forEach(c => { groupedShelves[c] = [] })
 
   stories.forEach((s) => {
-    const cat = s.category || 'Fairy Tales'
-    if (groupedShelves[cat]) {
-      groupedShelves[cat].push(s)
-    } else {
-      groupedShelves['Fairy Tales'].push(s)
-    }
+    const cat = s.category && groupedShelves[s.category] ? s.category : 'Fairy Tales'
+    groupedShelves[cat].push(s)
   })
 
   return (
@@ -494,6 +625,13 @@ export default function Home() {
       <audio
         ref={audioRef}
         onEnded={() => {
+          if (webPartIndex < webTotalParts - 1 && playingStoryId) {
+            const currentStory = stories.find(s => s.id === playingStoryId) || readingStory
+            if (currentStory) {
+              loadWebStoryPart(currentStory, webPartIndex + 1, selectedVoice, true)
+              return
+            }
+          }
           setIsPlaying(false)
           if (playingStoryId) {
             deleteStoryBookmark(playingStoryId)
@@ -556,7 +694,9 @@ export default function Home() {
                   className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 transition text-xs font-semibold text-slate-800 cursor-pointer"
                 >
                   <User className="w-3.5 h-3.5 text-slate-700" />
-                  <span>{user.email.split('@')[0]}</span>
+                  <span>
+                    {user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user.full_name || user.email.split('@')[0])}
+                  </span>
                 </button>
                 <button
                   onClick={handleSignOut}
@@ -793,26 +933,6 @@ export default function Home() {
                     )
                   })}
                 </div>
-
-                {/* THE SIGNATURE ACRYLIC / GLASS SHELF RAILING WITH METALLIC SCREW RIVETS */}
-                <div
-                  className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 rounded-xl border flex items-center justify-between px-6 backdrop-blur-md acrylic-shelf-shadow"
-                  style={{
-                    backgroundColor: config.acrylicColor,
-                    borderColor: config.acrylicBorder
-                  }}
-                >
-                  {/* Left Metallic Screw Rivet */}
-                  <div className="w-4 h-4 rounded-full bg-slate-300 border border-slate-400 shadow-inner flex items-center justify-center">
-                    <div className="w-2.5 h-[1.5px] bg-slate-500 rotate-45" />
-                  </div>
-
-                  {/* Right Metallic Screw Rivet */}
-                  <div className="w-4 h-4 rounded-full bg-slate-300 border border-slate-400 shadow-inner flex items-center justify-center">
-                    <div className="w-2.5 h-[1.5px] bg-slate-500 -rotate-45" />
-                  </div>
-                </div>
-
               </div>
             </div>
           )
@@ -824,7 +944,7 @@ export default function Home() {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => setIsGenerateOpen(true)}
+          onClick={() => setIsAddBooksOpen(true)}
           className="px-8 py-3.5 rounded-full bg-slate-950 text-white font-bold text-sm tracking-wide shadow-xl shadow-slate-900/20 hover:bg-slate-900 transition flex items-center gap-2 cursor-pointer"
         >
           <Sparkles className="w-4 h-4 text-amber-400" />
@@ -851,6 +971,16 @@ export default function Home() {
                 </div>
                 <div className="text-[11px] text-slate-500 flex items-center gap-2">
                   <span>Voice: {VOICES.find(v => v.id === selectedVoice)?.name}</span>
+                  {webTotalParts > 1 && (
+                    <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-indigo-200">
+                      Part {webPartIndex + 1} of {webTotalParts}
+                    </span>
+                  )}
+                  {webTotalDuration > 0 && (
+                    <span className="text-slate-400 font-medium">
+                      • {formatTrialTime(webTotalDuration)} total
+                    </span>
+                  )}
                   {!isSubscribed && (
                     <span className="text-emerald-600 font-semibold">
                       • Trial: {formatTrialTime(trialSecondsRemaining)}
@@ -969,63 +1099,316 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      {/* MODAL: CREATE CUSTOM AI STORY ("Add Books") */}
+      {/* MODAL: ADD BOOKS (REQUEST A BOOK / PUBLISH STORY / AI DREAMWEAVER) */}
       <AnimatePresence>
-        {isGenerateOpen && (
+        {(isAddBooksOpen || isGenerateOpen) && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200"
+              className="w-full max-w-xl bg-white rounded-3xl p-6 md:p-8 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
                     <Sparkles className="w-4 h-4" />
                   </div>
-                  <h3 className="font-serif font-black text-lg text-slate-900">Add New Book</h3>
+                  <h3 className="font-serif font-black text-xl text-slate-900">Add Books</h3>
                 </div>
-                <button onClick={() => setIsGenerateOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <button
+                  onClick={() => { setIsAddBooksOpen(false); setIsGenerateOpen(false); setReqSuccess(null); setPubSuccess(null); }}
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-full hover:bg-slate-100 transition cursor-pointer"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <p className="text-xs text-slate-500 mb-4">
-                Describe a magical theme or character. Our OpenAI engine will craft a custom bedtime story and place it on your shelf.
-              </p>
+              {/* TABS */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl mb-6">
+                <button
+                  type="button"
+                  onClick={() => setAddBooksTab('request')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${addBooksTab === 'request' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Request a Book</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddBooksTab('publish')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${addBooksTab === 'publish' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Publish Story</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddBooksTab('dreamweaver')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${addBooksTab === 'dreamweaver' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>AI Dreamweaver</span>
+                </button>
+              </div>
 
-              <form onSubmit={handleGenerateStory} className="space-y-4">
+              {/* TAB 1: REQUEST A BOOK */}
+              {addBooksTab === 'request' && (
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Story Theme or Prompt</label>
-                  <input
-                    type="text"
-                    value={customTheme}
-                    onChange={(e) => setCustomTheme(e.target.value)}
-                    placeholder="e.g. A tiny hedgehog searching for the constellation of stars..."
-                    required
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
-                  />
-                </div>
+                  <div className="mb-4">
+                    <p className="text-xs text-slate-600 font-medium">
+                      Missing a favourite childhood tale? Let us know and our editorial narrators will review and add it to the StoryTime bookshelf.
+                    </p>
+                  </div>
 
-                <div className="pt-2 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsGenerateOpen(false)}
-                    className="px-4 py-2 text-xs font-semibold text-slate-500"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={generatingCustom}
-                    className="px-5 py-2.5 rounded-full bg-slate-950 text-white text-xs font-bold hover:bg-slate-800 transition flex items-center gap-2"
-                  >
-                    {generatingCustom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-400" />}
-                    <span>Create Tale</span>
-                  </button>
+                  {reqSuccess && (
+                    <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                      <span>{reqSuccess}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleBookRequestSubmit} className="space-y-3.5">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">Book Title *</label>
+                      <input
+                        type="text"
+                        value={reqTitle}
+                        onChange={(e) => setReqTitle(e.target.value)}
+                        placeholder="e.g. The Velveteen Rabbit"
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">Author / Series</label>
+                        <input
+                          type="text"
+                          value={reqAuthor}
+                          onChange={(e) => setReqAuthor(e.target.value)}
+                          placeholder="e.g. Margery Williams"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">Preferred Shelf</label>
+                        <select
+                          value={reqCategory}
+                          onChange={(e) => setReqCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800 bg-white"
+                        >
+                          <option value="Fairy Tales">Fairy Tales</option>
+                          <option value="Bedtime Classics">Bedtime Classics</option>
+                          <option value="Adventure & Magic">Adventure & Magic</option>
+                          <option value="Fables & Legends">Fables & Legends</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">Special Notes / Moral</label>
+                      <textarea
+                        value={reqNotes}
+                        onChange={(e) => setReqNotes(e.target.value)}
+                        rows={3}
+                        placeholder="Any specific edition, lesson, or adaptation your family loves..."
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
+                      />
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddBooksOpen(false)}
+                        className="px-4 py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={reqLoading}
+                        className="px-5 py-2.5 rounded-full bg-slate-950 text-white text-xs font-bold hover:bg-slate-800 transition flex items-center gap-2 shadow-sm"
+                      >
+                        {reqLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5 text-amber-400" />}
+                        <span>Submit Book Request</span>
+                      </button>
+                    </div>
+                  </form>
                 </div>
-              </form>
+              )}
+
+              {/* TAB 2: PUBLISH YOUR OWN STORY */}
+              {addBooksTab === 'publish' && (
+                <div>
+                  <div className="mb-4">
+                    <p className="text-xs text-slate-600 font-medium">
+                      Publish your family tale or custom narrative. You can type it directly or upload a text file.
+                    </p>
+                  </div>
+
+                  {pubSuccess && (
+                    <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                      <span>{pubSuccess}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handlePublishStorySubmit} className="space-y-3.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">Story Title *</label>
+                        <input
+                          type="text"
+                          value={pubTitle}
+                          onChange={(e) => setPubTitle(e.target.value)}
+                          placeholder="e.g. Oliver and the Star Garden"
+                          required
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">Category / Shelf</label>
+                        <select
+                          value={pubCategory}
+                          onChange={(e) => setPubCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800 bg-white"
+                        >
+                          <option value="Fairy Tales">Fairy Tales</option>
+                          <option value="Bedtime Classics">Bedtime Classics</option>
+                          <option value="Adventure & Magic">Adventure & Magic</option>
+                          <option value="Fables & Legends">Fables & Legends</option>
+                          <option value="Community Stories">Community Stories</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Visibility Setting */}
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <label className="text-xs font-bold text-slate-800 block mb-2">Publishing Visibility</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPubIsPublic(true)}
+                          className={`p-3 rounded-xl border text-left transition flex flex-col gap-1 ${pubIsPublic ? 'bg-white border-amber-500 shadow-sm' : 'border-slate-200 hover:bg-white/60'}`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
+                            <Globe className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Public to Everyone</span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 leading-tight">
+                            All families can read & listen. Community broadcast sent via newstory@alpha-devs.cloud.
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPubIsPublic(false)}
+                          className={`p-3 rounded-xl border text-left transition flex flex-col gap-1 ${!pubIsPublic ? 'bg-white border-indigo-500 shadow-sm' : 'border-slate-200 hover:bg-white/60'}`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
+                            <EyeOff className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Private to Me</span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 leading-tight">
+                            Only visible to your logged-in account bookshelf. No notifications sent.
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Upload TXT File */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700">Story Text / Script *</label>
+                        <label className="text-[11px] text-amber-700 font-semibold hover:underline cursor-pointer flex items-center gap-1">
+                          <UploadCloud className="w-3 h-3" />
+                          <span>Load from .txt file</span>
+                          <input
+                            type="file"
+                            accept=".txt,text/plain"
+                            onChange={handleTxtFileUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      <textarea
+                        value={pubContent}
+                        onChange={(e) => setPubContent(e.target.value)}
+                        rows={5}
+                        placeholder="Once upon a time in a tranquil meadow..."
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800 leading-relaxed font-serif"
+                      />
+                      <span className="text-[11px] text-slate-400 block mt-1">
+                        Tip: You can either type or click "Load from .txt file" to import any bedtime story draft.
+                      </span>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddBooksOpen(false)}
+                        className="px-4 py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={pubLoading}
+                        className="px-5 py-2.5 rounded-full bg-slate-950 text-white text-xs font-bold hover:bg-slate-800 transition flex items-center gap-2 shadow-sm"
+                      >
+                        {pubLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5 text-amber-400" />}
+                        <span>{pubIsPublic ? 'Publish & Notify Readers' : 'Save Private Story'}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB 3: AI DREAMWEAVER */}
+              {addBooksTab === 'dreamweaver' && (
+                <div>
+                  <div className="mb-4">
+                    <p className="text-xs text-slate-600 font-medium">
+                      Describe a magical theme or character. Our OpenAI engine will craft a custom bedtime story and place it on your shelf.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleGenerateStory} className="space-y-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">Story Theme or Prompt</label>
+                      <input
+                        type="text"
+                        value={customTheme}
+                        onChange={(e) => setCustomTheme(e.target.value)}
+                        placeholder="e.g. A tiny hedgehog searching for the constellation of stars..."
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
+                      />
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddBooksOpen(false)}
+                        className="px-4 py-2 text-xs font-semibold text-slate-500"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={generatingCustom}
+                        className="px-5 py-2.5 rounded-full bg-slate-950 text-white text-xs font-bold hover:bg-slate-800 transition flex items-center gap-2"
+                      >
+                        {generatingCustom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-400" />}
+                        <span>Create Tale</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
@@ -1166,6 +1549,29 @@ export default function Home() {
               {/* Mode: Signup */}
               {authMode === 'signup' && (
                 <form onSubmit={handleSignUpRequest} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">First Name</label>
+                      <input
+                        type="text"
+                        value={authFirstName}
+                        onChange={(e) => setAuthFirstName(e.target.value)}
+                        placeholder="e.g. Sarah"
+                        required
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">Last Name</label>
+                      <input
+                        type="text"
+                        value={authLastName}
+                        onChange={(e) => setAuthLastName(e.target.value)}
+                        placeholder="e.g. Jenkins"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-slate-800"
+                      />
+                    </div>
+                  </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-700 block mb-1">Parent Email</label>
                     <input
