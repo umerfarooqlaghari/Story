@@ -308,6 +308,11 @@ export default function Home() {
   }
 
   const handlePlayToggle = async (story: Story, overrideVoice?: string) => {
+    if (!user) {
+      setIsAuthOpen(true)
+      return
+    }
+
     const voiceToUse = overrideVoice || selectedVoice
 
     if (!isSubscribed && trialSecondsRemaining <= 0) {
@@ -551,13 +556,19 @@ export default function Home() {
   }
 
   const handleSubscribe = async (plan: 'monthly' | 'yearly') => {
-    const userId = user?.id || 'guest_device_user'
+    if (!user) {
+      setIsUpgradeOpen(false)
+      setIsAuthOpen(true)
+      alert("Please sign in or create an account before subscribing to Story Time PRO.")
+      return
+    }
+
     try {
       const res = await fetch(`${API_BASE_URL}/api/subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: userId,
+          user_id: user.id,
           plan: plan
         })
       })
@@ -745,20 +756,28 @@ export default function Home() {
 
             <button
               onClick={() => setIsUpgradeOpen(true)}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition shadow-sm cursor-pointer ${isSubscribed
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition shadow-sm cursor-pointer ${
+                user && isSubscribed
                   ? "bg-slate-950 text-white"
-                  : "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                }`}
+                  : user
+                  ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                  : "bg-purple-50 text-purple-800 border border-purple-200"
+              }`}
             >
-              {isSubscribed ? (
+              {user && isSubscribed ? (
                 <>
                   <Crown className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                   <span>PRO UNLIMITED</span>
                 </>
-              ) : (
+              ) : user ? (
                 <>
                   <Timer className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Free Trial: {formatTrialTime(trialSecondsRemaining)}</span>
+                </>
+              ) : (
+                <>
+                  <Crown className="w-3.5 h-3.5 text-purple-600" />
+                  <span>PRO Plans</span>
                 </>
               )}
             </button>
@@ -981,7 +1000,7 @@ export default function Home() {
                       • {formatTrialTime(webTotalDuration)} total
                     </span>
                   )}
-                  {!isSubscribed && (
+                  {user && !isSubscribed && (
                     <span className="text-emerald-600 font-semibold">
                       • Trial: {formatTrialTime(trialSecondsRemaining)}
                     </span>
@@ -1085,7 +1104,7 @@ export default function Home() {
                   className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-900 text-white font-semibold text-xs hover:bg-slate-800 transition"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Listen with Voice Narration</span>
+                  <span>{user ? 'Listen with Voice Narration' : 'Sign In to Listen'}</span>
                 </button>
                 <button
                   onClick={() => setReadingStory(null)}
@@ -1439,9 +1458,34 @@ export default function Home() {
               <h3 className="font-serif text-2xl font-black text-slate-900 mb-2">
                 Never Stop The Magic
               </h3>
-              <p className="text-xs text-slate-500 leading-relaxed mb-6">
+              <p className="text-xs text-slate-500 leading-relaxed mb-4">
                 Unlock unlimited listening across all 20 classic children’s tales and custom AI storybooks with crystal-clear ElevenLabs voices.
               </p>
+
+              {user && isSubscribed ? (
+                <div className="p-3.5 mb-6 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center shrink-0">
+                    <Crown className="w-4 h-4 text-purple-700" />
+                  </div>
+                  <div className="text-xs">
+                    <div className="font-bold">StoryTime PRO Active ({subscriptionPlan === 'yearly' ? 'Yearly' : 'Monthly'})</div>
+                    <div className="text-[11px] text-purple-700">All stories, audio narrations, and custom tales are completely unlocked!</div>
+                  </div>
+                </div>
+              ) : !user ? (
+                <div className="p-3.5 mb-6 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3">
+                  <div className="text-xs">
+                    <div className="font-bold">Account Required to Subscribe</div>
+                    <div className="text-[11px] text-amber-700">Please sign in to link your subscription and unlock voice narration.</div>
+                  </div>
+                  <button
+                    onClick={() => { setIsUpgradeOpen(false); setIsAuthOpen(true) }}
+                    className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold text-xs hover:bg-amber-700 shrink-0"
+                  >
+                    Sign In
+                  </button>
+                </div>
+              ) : null}
 
               {/* Pricing Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">

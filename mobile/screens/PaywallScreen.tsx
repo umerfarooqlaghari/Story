@@ -71,7 +71,7 @@ const StarIcon = ({ size = 10, color = '#ffffff' }: { size?: number; color?: str
 );
 
 export default function PaywallScreen({ navigation }: any) {
-  const { isPremium, trialSecondsRemaining, subscribe } = useSubscription();
+  const { isPremium, trialSecondsRemaining, subscriptionPlan, user, subscribe } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
   const [purchasing, setPurchasing] = useState(false);
 
@@ -82,6 +82,18 @@ export default function PaywallScreen({ navigation }: any) {
   };
 
   const handleSubscribe = async () => {
+    if (!user) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in or create a parent account before subscribing, so your subscription is safely attached to your account.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign In / Register', onPress: () => navigation.navigate('Auth') }
+        ]
+      );
+      return;
+    }
+
     setPurchasing(true);
     const res = await subscribe(selectedPlan);
     setPurchasing(false);
@@ -93,7 +105,7 @@ export default function PaywallScreen({ navigation }: any) {
         [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
       );
     } else {
-      Alert.alert('Subscription Notice', 'Could not complete subscription. Please try again.');
+      Alert.alert('Subscription Notice', res.error || 'Could not complete subscription. Please try again.');
     }
   };
 
@@ -117,22 +129,52 @@ export default function PaywallScreen({ navigation }: any) {
           </Text>
         </View>
 
-        {/* Free Trial Status Card */}
-        <View style={[styles.trialBanner, trialSecondsRemaining <= 0 && styles.trialExpiredBanner]}>
-          <View style={styles.trialIconContainer}>
-            <TimerIcon size={22} color={trialSecondsRemaining > 0 ? "#15803d" : "#b91c1c"} />
+        {/* Status Card: Pro Active vs Free Trial vs Guest */}
+        {user && isPremium ? (
+          <View style={[styles.trialBanner, { backgroundColor: '#f5f3ff', borderColor: '#ddd6fe' }]}>
+            <View style={[styles.trialIconContainer, { backgroundColor: '#ede9fe' }]}>
+              <CrownIcon size={22} color="#7c3aed" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.trialTitle, { color: '#7c3aed' }]}>
+                StoryTime PRO Active
+              </Text>
+              <Text style={styles.trialDesc}>
+                Your {subscriptionPlan === 'yearly' ? 'Yearly' : 'Monthly'} plan is active! Unlimited ElevenLabs audio and custom bedtime stories are unlocked.
+              </Text>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.trialTitle, trialSecondsRemaining <= 0 && { color: '#b91c1c' }]}>
-              {trialSecondsRemaining > 0 ? '10-Minute Free Trial' : 'Free Trial Ended'}
-            </Text>
-            <Text style={styles.trialDesc}>
-              {trialSecondsRemaining > 0
-                ? `${formatTrialTime(trialSecondsRemaining)} remaining of your generic books free trial.`
-                : 'You have used your 10 minutes of free storytelling. Upgrade to continue listening!'}
-            </Text>
+        ) : user ? (
+          <View style={[styles.trialBanner, trialSecondsRemaining <= 0 && styles.trialExpiredBanner]}>
+            <View style={styles.trialIconContainer}>
+              <TimerIcon size={22} color={trialSecondsRemaining > 0 ? "#15803d" : "#b91c1c"} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.trialTitle, trialSecondsRemaining <= 0 && { color: '#b91c1c' }]}>
+                {trialSecondsRemaining > 0 ? '10-Minute Free Trial' : 'Free Trial Ended'}
+              </Text>
+              <Text style={styles.trialDesc}>
+                {trialSecondsRemaining > 0
+                  ? `${formatTrialTime(trialSecondsRemaining)} remaining of your generic books free trial.`
+                  : 'You have used your 10 minutes of free storytelling. Upgrade to continue listening!'}
+              </Text>
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={[styles.trialBanner, { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }]}>
+            <View style={[styles.trialIconContainer, { backgroundColor: '#f1f5f9' }]}>
+              <CrownIcon size={20} color="#64748b" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.trialTitle, { color: '#0f172a' }]}>
+                Sign In to Subscribe
+              </Text>
+              <Text style={styles.trialDesc}>
+                Please sign in to unlock audio narration and link subscriptions to your parent account.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Feature List with Classy SVG Icon Badges */}
         <View style={styles.featuresList}>
@@ -244,7 +286,11 @@ export default function PaywallScreen({ navigation }: any) {
               onPress={handleSubscribe}
             >
               <Text style={styles.subscribeButtonText}>
-                {isPremium ? 'Plan Active (Switch Plan)' : `Subscribe for ${selectedPlan === 'yearly' ? '$320 / yr' : '$30 / mo'}`}
+                {!user
+                  ? 'Sign In to Subscribe'
+                  : isPremium
+                  ? `Plan Active (${subscriptionPlan === 'yearly' ? 'Yearly' : 'Monthly'}) • Switch Plan`
+                  : `Subscribe for ${selectedPlan === 'yearly' ? '$320 / yr' : '$30 / mo'}`}
               </Text>
             </TouchableOpacity>
           )}

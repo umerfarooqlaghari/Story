@@ -99,7 +99,7 @@ const CURATED_VOICES = [
 
 export default function PlayerScreen({ route, navigation }: any) {
   const { story } = route.params || {};
-  const { isPremium, trialSecondsRemaining, recordListeningSeconds } = useSubscription();
+  const { isPremium, trialSecondsRemaining, recordListeningSeconds, user } = useSubscription();
 
   const [activeVoice, setActiveVoice] = useState('JBFqnCBsd6RMkjVDRZzb'); // George as default
   const [audioUrl, setAudioUrl] = useState<string | null>(story?.audio_url || null);
@@ -460,12 +460,32 @@ export default function PlayerScreen({ route, navigation }: any) {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  const promptSignInForAudio = () => {
+    Alert.alert(
+      'Sign In Required',
+      'Audio narration requires a parent account. Please sign in or register to start listening to stories!',
+      [
+        { text: 'Read Only', style: 'cancel' },
+        { text: 'Sign In / Register', onPress: () => navigation.navigate('Auth') }
+      ]
+    );
+  };
+
   const fetchAudioForVoice = async (voiceId: string, autoPlay = true) => {
+    if (autoPlay && !user) {
+      promptSignInForAudio();
+      return;
+    }
     setActiveVoice(voiceId);
     await loadStoryPart(0, voiceId, autoPlay);
   };
 
   const handlePlayToggle = async () => {
+    if (!user) {
+      promptSignInForAudio();
+      return;
+    }
+
     if (!isPremium && trialSecondsRemaining <= 0) {
       navigation.navigate('Paywall');
       return;
@@ -493,11 +513,19 @@ export default function PlayerScreen({ route, navigation }: any) {
   };
 
   const handleRewind = async (seconds: number = 10) => {
+    if (!user) {
+      promptSignInForAudio();
+      return;
+    }
     const targetOverall = Math.max(0, overallCurrentTime - seconds);
     await seekToOverallTime(targetOverall);
   };
 
   const handleFastForward = async (seconds: number = 10) => {
+    if (!user) {
+      promptSignInForAudio();
+      return;
+    }
     const targetOverall = Math.min(effectiveDuration, overallCurrentTime + seconds);
     await seekToOverallTime(targetOverall);
   };
@@ -574,17 +602,19 @@ export default function PlayerScreen({ route, navigation }: any) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.trialBadge, isPremium ? styles.proBadge : styles.trialActiveBadge]}
+              style={[styles.trialBadge, (user && isPremium) ? styles.proBadge : styles.trialActiveBadge]}
               onPress={() => navigation.navigate('Paywall')}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                {isPremium ? (
+                {(user && isPremium) ? (
                   <CrownIcon size={13} color="#ffffff" />
-                ) : (
+                ) : user ? (
                   <ClockIcon size={13} color="#15803d" />
+                ) : (
+                  <CrownIcon size={13} color="#7c3aed" />
                 )}
-                <Text style={[styles.trialBadgeText, isPremium && styles.proBadgeText]}>
-                  {isPremium ? 'PRO' : `Trial: ${formatTrialTime(trialSecondsRemaining)}`}
+                <Text style={[styles.trialBadgeText, (user && isPremium) && styles.proBadgeText]}>
+                  {(user && isPremium) ? 'PRO' : user ? `Trial: ${formatTrialTime(trialSecondsRemaining)}` : 'PRO Plans'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -798,7 +828,9 @@ export default function PlayerScreen({ route, navigation }: any) {
                     <PlayIcon size={16} color="#ffffff" />
                   )}
                   <Text style={styles.mainPlayText}>
-                    {audioUrl
+                    {!user
+                      ? 'Sign In to Listen'
+                      : audioUrl
                       ? status.playing ? 'Pause' : 'Play Narration'
                       : 'Listen with ElevenLabs'}
                   </Text>

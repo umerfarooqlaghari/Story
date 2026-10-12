@@ -11,7 +11,16 @@ export function useSubscription() {
   const [loading, setLoading] = useState(true);
 
   const fetchStatus = useCallback(async (activeUser: UserProfile | null) => {
-    const userId = activeUser?.id || 'guest_device_user';
+    if (!activeUser || !activeUser.id) {
+      // Unauthenticated guest: never premium
+      setIsPremium(false);
+      setSubscriptionPlan(null);
+      setTrialSecondsRemaining(600);
+      setLoading(false);
+      return;
+    }
+
+    const userId = activeUser.id;
     try {
       const res = await fetch(`${API_BASE_URL}/api/subscription-status?user_id=${userId}`);
       const data = await res.json();
@@ -33,33 +42,46 @@ export function useSubscription() {
   }, []);
 
   useEffect(() => {
-    // 1. Initial user session load
-    getUserSession().then((stored) => {
-      setUser(stored);
-      fetchStatus(stored);
-    });
-
-    // 2. Auth changes listener (login, signup, logout)
-    const unsubscribeAuth = addAuthListener((updatedUser) => {
-      setUser(updatedUser);
-      fetchStatus(updatedUser);
-    });
-
-    // 3. RevenueCat SDK listener (if configured)
-    const checkRevenueCat = async () => {
+    const checkRevenueCat = async (activeUser: UserProfile) => {
       try {
+        await Purchases.logIn(activeUser.id);
         const customerInfo = await Purchases.getCustomerInfo();
         const hasEntitlement =
           typeof customerInfo.entitlements.active['story_teller_pro'] !== 'undefined' ||
           typeof customerInfo.entitlements.active['Premium'] !== 'undefined';
         if (hasEntitlement) {
           setIsPremium(true);
+          const ent = customerInfo.entitlements.active['story_teller_pro'] || customerInfo.entitlements.active['Premium'];
+          const plan = ent?.productIdentifier?.toLowerCase().includes('year') ? 'yearly' : 'monthly';
+          setSubscriptionPlan(plan);
         }
       } catch (e) {
         // Purchases non-native fallback
       }
     };
-    checkRevenueCat();
+
+    // 1. Initial user session load
+    getUserSession().then((stored) => {
+      setUser(stored);
+      fetchStatus(stored);
+      if (stored && stored.id) {
+        checkRevenueCat(stored);
+      }
+    });
+
+    // 2. Auth changes listener (login, signup, logout)
+    const unsubscribeAuth = addAuthListener((updatedUser) => {
+      setUser(updatedUser);
+      fetchStatus(updatedUser);
+      if (updatedUser && updatedUser.id) {
+        checkRevenueCat(updatedUser);
+      } else {
+        // Logged out: reset all premium states and unlink RevenueCat
+        setIsPremium(false);
+        setSubscriptionPlan(null);
+        Purchases.logOut().catch(() => {});
+      }
+    });
 
     return () => {
       unsubscribeAuth();
@@ -83,7 +105,10 @@ export function useSubscription() {
   };
 
   const subscribe = async (plan: 'monthly' | 'yearly') => {
-    const userId = user?.id || 'guest_device_user';
+    if (!user || !user.id) {
+      return { success: false, error: 'Please sign in to your account before subscribing.' };
+    }
+    const userId = user.id;
     try {
       const res = await fetch(`${API_BASE_URL}/api/subscribe`, {
         method: 'POST',

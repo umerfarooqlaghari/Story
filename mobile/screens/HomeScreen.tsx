@@ -577,17 +577,19 @@ export default function HomeScreen({ navigation }: any) {
 
         {/* PRO / Free Trial Pill */}
         <TouchableOpacity
-          style={[styles.trialBadge, isPremium ? styles.proBadge : styles.trialActiveBadge]}
+          style={[styles.trialBadge, (user && isPremium) ? styles.proBadge : styles.trialActiveBadge]}
           onPress={() => navigation.navigate('Paywall')}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            {isPremium ? (
+            {(user && isPremium) ? (
               <CrownIcon size={13} color="#ffffff" />
-            ) : (
+            ) : user ? (
               <TimerIcon size={13} color="#15803d" />
+            ) : (
+              <CrownIcon size={13} color="#7c3aed" />
             )}
-            <Text style={[styles.trialBadgeText, isPremium && styles.proBadgeText]}>
-              {isPremium ? 'PRO UNLIMITED' : `Free Trial: ${formatTrialTime(trialSecondsRemaining)}`}
+            <Text style={[styles.trialBadgeText, (user && isPremium) && styles.proBadgeText]}>
+              {(user && isPremium) ? 'PRO UNLIMITED' : user ? `Free Trial: ${formatTrialTime(trialSecondsRemaining)}` : 'PRO Plans'}
             </Text>
           </View>
         </TouchableOpacity>
