@@ -11,7 +11,8 @@ from .auth_service import (
     hash_password,
     verify_password,
     create_tokens,
-    verify_jwt_token
+    verify_jwt_token,
+    send_support_query_email
 )
 from datetime import datetime, timezone, timedelta
 from openai import AsyncOpenAI
@@ -694,3 +695,50 @@ async def seed_classic_stories():
             }).execute()
         count += 1
     return {"message": f"Successfully seeded/updated {count} classic stories."}
+
+class SupportQueryRequest(BaseModel):
+    name: str
+    email: str
+    subject: str
+    message: str
+    category: Optional[str] = "General Inquiry"
+
+@app.post("/api/support-query")
+async def submit_support_query(req: SupportQueryRequest):
+    """Receive a customer support query from the web support page and send it to umer.farooq@alpha-devs.cloud."""
+    if not req.email or not req.name or not req.message:
+        raise HTTPException(status_code=400, detail="Name, email, and message are required.")
+    
+    clean_name = req.name.strip()
+    clean_email = req.email.strip()
+    clean_subject = req.subject.strip() if req.subject else "Support Query"
+    clean_message = req.message.strip()
+    clean_category = req.category.strip() if req.category else "General Inquiry"
+
+    # Send email to umer.farooq@alpha-devs.cloud via AWS SES
+    email_sent = send_support_query_email(
+        name=clean_name,
+        user_email=clean_email,
+        subject=clean_subject,
+        message=clean_message,
+        category=clean_category
+    )
+
+    # Attempt to log to Supabase if support_queries table exists
+    try:
+        supabase.table("support_queries").insert({
+            "name": clean_name,
+            "email": clean_email,
+            "subject": clean_subject,
+            "category": clean_category,
+            "message": clean_message,
+            "email_sent": email_sent
+        }).execute()
+    except Exception as e:
+        print(f"Notice: support query DB log skipped or table not initialized: {e}")
+
+    return {
+        "success": True,
+        "email_sent": email_sent,
+        "message": "Your support query has been successfully dispatched. Our team will review and reply to your email shortly."
+    }

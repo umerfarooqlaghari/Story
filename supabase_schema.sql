@@ -42,7 +42,7 @@ ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS category TEXT;
 CREATE POLICY "Anyone can view classic stories" ON public.stories FOR SELECT USING (is_classic = TRUE);
 
 -- Create a table for cached audio variants (different voices for the same story)
-CREATE TABLE public.story_audio_variants (
+CREATE TABLE IF NOT EXISTS public.story_audio_variants (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   story_id UUID REFERENCES public.stories(id) ON DELETE CASCADE,
   voice_id TEXT NOT NULL,
@@ -53,5 +53,22 @@ CREATE TABLE public.story_audio_variants (
 
 ALTER TABLE public.story_audio_variants ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view audio variants" ON public.story_audio_variants FOR SELECT USING (true);
-CREATE POLICY "System can insert variants" ON public.story_audio_variants FOR INSERT WITH CHECK (true); -- Ideally restrict to service role
+CREATE POLICY "System can insert variants" ON public.story_audio_variants FOR INSERT WITH CHECK (true);
+
+-- Create table for customer support queries
+CREATE TABLE IF NOT EXISTS public.support_queries (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  category TEXT DEFAULT 'General Inquiry',
+  subject TEXT,
+  message TEXT NOT NULL,
+  email_sent BOOLEAN DEFAULT FALSE,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.support_queries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can submit support query" ON public.support_queries FOR INSERT WITH CHECK (true);
+
 

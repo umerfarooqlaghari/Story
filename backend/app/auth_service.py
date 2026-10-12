@@ -131,3 +131,70 @@ def verify_jwt_token(token: str) -> dict | None:
         return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except Exception:
         return None
+
+def send_support_query_email(
+    name: str,
+    user_email: str,
+    subject: str,
+    message: str,
+    category: str = "General Inquiry"
+) -> bool:
+    """Send an inbound user support query email to umer.farooq@alpha-devs.cloud via AWS SES."""
+    client = get_ses_client()
+    target_destination = "umer.farooq@alpha-devs.cloud"
+    
+    html_body = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #fdfbf7; margin: 0; padding: 24px; color: #1e293b; }}
+        .card {{ max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 32px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
+        .badge {{ display: inline-block; padding: 4px 12px; background: #fef3c7; color: #92400e; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }}
+        h1 {{ font-size: 22px; color: #0f172a; margin: 16px 0 8px 0; font-family: Georgia, serif; }}
+        .meta {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 20px 0; }}
+        .meta-row {{ margin-bottom: 8px; font-size: 14px; }}
+        .meta-row:last-child {{ margin-bottom: 0; }}
+        .meta-label {{ font-weight: 700; color: #64748b; }}
+        .meta-value {{ color: #0f172a; font-weight: 500; }}
+        .message-box {{ background: #fafafa; border-left: 4px solid #f59e0b; border-radius: 4px; padding: 16px; font-size: 15px; line-height: 1.6; color: #334155; white-space: pre-wrap; margin: 20px 0; }}
+        .footer {{ font-size: 12px; color: #94a3b8; text-align: center; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <span class="badge">{category}</span>
+        <h1>New StoryTime Support Query</h1>
+        <div class="meta">
+          <div class="meta-row"><span class="meta-label">From Name:</span> <span class="meta-value">{name}</span></div>
+          <div class="meta-row"><span class="meta-label">Reply-To Email:</span> <span class="meta-value"><a href="mailto:{user_email}">{user_email}</a></span></div>
+          <div class="meta-row"><span class="meta-label">Category:</span> <span class="meta-value">{category}</span></div>
+          <div class="meta-row"><span class="meta-label">Subject:</span> <span class="meta-value">{subject}</span></div>
+        </div>
+        <div class="message-box">{message}</div>
+        <div class="footer">
+          Submitted via StoryTime Web Support Portal • Support inquiries channel: info@alpha-devs.cloud
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    try:
+        client.send_email(
+            Source=f"StoryTime Support <{FROM_EMAIL}>",
+            Destination={"ToAddresses": [target_destination]},
+            ReplyToAddresses=[user_email],
+            Message={
+                "Subject": {"Data": f"[StoryTime Support Query] {subject} - {name}", "Charset": "UTF-8"},
+                "Body": {
+                    "Html": {"Data": html_body, "Charset": "UTF-8"},
+                    "Text": {"Data": f"StoryTime Support Query\n\nName: {name}\nEmail: {user_email}\nCategory: {category}\nSubject: {subject}\n\nMessage:\n{message}", "Charset": "UTF-8"}
+                }
+            }
+        )
+        return True
+    except Exception as e:
+        print(f"SES Support Query Send Error: {e}")
+        return False

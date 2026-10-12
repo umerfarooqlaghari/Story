@@ -1557,11 +1557,19 @@ export default function Home() {
                 Have questions about stories, billing, or audio narration? Our family support team is available 7 days a week.
               </p>
 
+              <Link
+                href="/support"
+                onClick={() => setIsSupportOpen(false)}
+                className="block w-full py-3.5 rounded-2xl bg-amber-500 text-white font-bold text-xs hover:bg-amber-600 transition mb-2 shadow-sm shadow-amber-500/20"
+              >
+                Submit a Support Query
+              </Link>
+
               <a
-                href="mailto:support@storytimekids.com?subject=StoryTime Support Inquiry"
+                href="mailto:info@alpha-devs.cloud?subject=StoryTime Support Inquiry"
                 className="block w-full py-3.5 rounded-2xl bg-slate-950 dark:bg-white text-white dark:text-slate-900 font-bold text-xs hover:opacity-90 transition mb-3"
               >
-                Email: support@storytimekids.com
+                Email: info@alpha-devs.cloud
               </a>
 
               <div className="text-[11px] text-slate-400">
@@ -1689,8 +1697,11 @@ export default function Home() {
             <Link href="/privacy" className="hover:text-slate-900 underline font-medium">
               Privacy Policy & Disclosures
             </Link>
-            <a href="mailto:StoryTime@alpha-devs.cloud" className="hover:text-slate-900">
-              Support
+            <Link href="/support" className="hover:text-slate-900 underline font-medium">
+              Support Page
+            </Link>
+            <a href="mailto:info@alpha-devs.cloud" className="hover:text-slate-900">
+              info@alpha-devs.cloud
             </a>
           </div>
         </div>

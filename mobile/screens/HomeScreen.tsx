@@ -294,8 +294,8 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const handleSupportEmail = () => {
-    Linking.openURL('mailto:support@storytimekids.com?subject=StoryTime Support Request').catch(() => {
-      Alert.alert('Support Email', 'Please reach out to support@storytimekids.com');
+    Linking.openURL('mailto:info@alpha-devs.cloud?subject=StoryTime Support Request').catch(() => {
+      Alert.alert('Support Email', 'Please reach out to info@alpha-devs.cloud');
     });
   };
 
@@ -909,7 +909,7 @@ export default function HomeScreen({ navigation }: any) {
                     style={styles.contactSupportBtn}
                     onPress={handleSupportEmail}
                   >
-                    <Text style={styles.contactSupportBtnText}>Email: support@storytimekids.com</Text>
+                    <Text style={styles.contactSupportBtnText}>Email: info@alpha-devs.cloud</Text>
                   </TouchableOpacity>
                 </View>
 

@@ -242,13 +242,21 @@ export default function PrivacyPolicyPage() {
                   <div className="font-bold text-slate-900">Privacy Officer & Support Inquiries</div>
                   <div className="text-slate-500">Contact our dedicated team for privacy requests or billing inquiries.</div>
                 </div>
-                <a
-                  href="mailto:StoryTime@alpha-devs.cloud"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 transition-colors shrink-0"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  <span>StoryTime@alpha-devs.cloud</span>
-                </a>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href="/support"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-medium hover:bg-amber-100 transition-colors"
+                  >
+                    <span>Support Portal</span>
+                  </Link>
+                  <a
+                    href="mailto:info@alpha-devs.cloud"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 transition-colors"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>info@alpha-devs.cloud</span>
+                  </a>
+                </div>
               </div>
             </div>
           </section>
