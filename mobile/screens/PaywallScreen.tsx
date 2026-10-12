@@ -71,9 +71,21 @@ const StarIcon = ({ size = 10, color = '#ffffff' }: { size?: number; color?: str
 );
 
 export default function PaywallScreen({ navigation }: any) {
-  const { isPremium, trialSecondsRemaining, subscriptionPlan, user, subscribe } = useSubscription();
+  const {
+    isPremium,
+    trialSecondsRemaining,
+    subscriptionPlan,
+    user,
+    subscribe,
+    restorePurchases,
+    packages
+  } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
   const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  const yearlyPriceString = packages.yearly?.product.priceString || '$320';
+  const monthlyPriceString = packages.monthly?.product.priceString || '$30';
 
   const formatTrialTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -104,8 +116,28 @@ export default function PaywallScreen({ navigation }: any) {
         `Your ${selectedPlan === 'yearly' ? 'Yearly' : 'Monthly'} subscription is now active with unlimited ElevenLabs narration!`,
         [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
       );
+    } else if (res.cancelled) {
+      // User dismissed Apple StoreKit sheet
     } else {
       Alert.alert('Subscription Notice', res.error || 'Could not complete subscription. Please try again.');
+    }
+  };
+
+  const handleRestore = async () => {
+    setRestoring(true);
+    const res = await restorePurchases();
+    setRestoring(false);
+
+    if (res.success && res.isPremium) {
+      Alert.alert(
+        'Purchases Restored',
+        'Your Story Time PRO subscription was successfully restored!',
+        [{ text: 'Start Listening', onPress: () => navigation.goBack() }]
+      );
+    } else if (res.success && !res.isPremium) {
+      Alert.alert('No Subscription Found', 'We could not find an active Story Time PRO subscription linked to your Apple ID.');
+    } else {
+      Alert.alert('Restore Failed', res.error || 'Unable to restore purchases at this time.');
     }
   };
 
@@ -244,7 +276,7 @@ export default function PaywallScreen({ navigation }: any) {
               </View>
 
               <View style={styles.priceContainer}>
-                <Text style={styles.planPrice}>$320</Text>
+                <Text style={styles.planPrice}>{yearlyPriceString}</Text>
                 <Text style={styles.planPeriod}>/ year</Text>
               </View>
             </View>
@@ -268,7 +300,7 @@ export default function PaywallScreen({ navigation }: any) {
               </View>
 
               <View style={styles.priceContainer}>
-                <Text style={styles.planPrice}>$30</Text>
+                <Text style={styles.planPrice}>{monthlyPriceString}</Text>
                 <Text style={styles.planPeriod}>/ month</Text>
               </View>
             </View>
@@ -290,13 +322,21 @@ export default function PaywallScreen({ navigation }: any) {
                   ? 'Sign In to Subscribe'
                   : isPremium
                   ? `Plan Active (${subscriptionPlan === 'yearly' ? 'Yearly' : 'Monthly'}) • Switch Plan`
-                  : `Subscribe for ${selectedPlan === 'yearly' ? '$320 / yr' : '$30 / mo'}`}
+                  : `Subscribe for ${selectedPlan === 'yearly' ? `${yearlyPriceString} / yr` : `${monthlyPriceString} / mo`}`}
               </Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity onPress={() => Alert.alert('Restore Purchases', 'Your subscription status is synchronized with RevenueCat.')}>
-            <Text style={styles.restoreText}>Restore Purchases</Text>
+          <TouchableOpacity
+            onPress={handleRestore}
+            disabled={restoring || purchasing}
+            style={{ paddingVertical: 8, alignItems: 'center' }}
+          >
+            {restoring ? (
+              <ActivityIndicator size="small" color="#64748b" />
+            ) : (
+              <Text style={styles.restoreText}>Restore Purchases</Text>
+            )}
           </TouchableOpacity>
 
           <Text style={styles.legalNotice}>

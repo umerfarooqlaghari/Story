@@ -13,10 +13,11 @@ export const SUPABASE_ANON_KEY =
 
 // RevenueCat Public API Keys
 export const REVENUECAT_IOS_API_KEY =
-  process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY || '';
+  process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY || 'appl_JXVeSAirIvirNNpsdUxDWVORoMN';
 
 export const REVENUECAT_ANDROID_API_KEY =
-  process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY || '';
+  process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY || 'goog_mOWhSEdmeXPMfLYruMehlTKrpaG';
 
 export const REVENUECAT_TEST_STORE_API_KEY =
-  process.env.EXPO_PUBLIC_REVENUECAT_TEST_STORE_API_KEY || '';
+  process.env.EXPO_PUBLIC_REVENUECAT_TEST_STORE_API_KEY || 'test_CbDkieSGZtctvuTehYUudJJXJQm';
+
