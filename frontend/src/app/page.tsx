@@ -744,13 +744,21 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right Action Group: Privacy Link & PRO/Trial Badge */}
-          <div className="flex items-center gap-3">
+          {/* Right Action Group: Terms, Privacy Link & PRO/Trial Badge */}
+          <div className="flex items-center gap-2 md:gap-3">
+            <Link
+              href="/terms"
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-400" />
+              <span>Terms (EULA)</span>
+            </Link>
+
             <Link
               href="/privacy"
               className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
             >
-              <FileText className="w-3.5 h-3.5 text-slate-400" />
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
               <span>Privacy & Disclosures</span>
             </Link>
 
@@ -1519,7 +1527,11 @@ export default function Home() {
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-500 flex items-center justify-between">
                 <span>Secure payments powered by RevenueCat & upcoming Stripe</span>
-                <Link href="/privacy" className="text-slate-700 underline font-medium">Disclosures</Link>
+                <div className="flex items-center gap-2">
+                  <Link href="/terms" className="text-slate-700 underline font-medium">Terms (EULA)</Link>
+                  <span>•</span>
+                  <Link href="/privacy" className="text-slate-700 underline font-medium">Disclosures</Link>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -1867,8 +1879,20 @@ export default function Home() {
                     className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/60 transition text-xs font-semibold text-left cursor-pointer"
                   >
                     <div className="flex items-center gap-3">
+                      <ShieldCheck className="w-4 h-4 text-indigo-500" />
+                      <span>Privacy Policy</span>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  </Link>
+
+                  <Link
+                    href="/terms"
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/60 transition text-xs font-semibold text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
                       <FileText className="w-4 h-4 text-slate-500" />
-                      <span>Terms & Disclosures</span>
+                      <span>Terms of Service & EULA</span>
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                   </Link>
@@ -2136,7 +2160,7 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      {/* FOOTER with Privacy Policy Link */}
+      {/* FOOTER with Terms & Privacy Policy Links */}
       <footer className="mt-20 border-t border-slate-100 py-10 bg-slate-50 text-slate-500 text-xs">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -2144,6 +2168,9 @@ export default function Home() {
             <span>• Editorial Classic Library & AI Storyteller</span>
           </div>
           <div className="flex items-center gap-6">
+            <Link href="/terms" className="hover:text-slate-900 underline font-medium">
+              Terms of Service (EULA)
+            </Link>
             <Link href="/privacy" className="hover:text-slate-900 underline font-medium">
               Privacy Policy & Disclosures
             </Link>

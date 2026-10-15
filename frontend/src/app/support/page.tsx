@@ -134,6 +134,19 @@ export default function SupportPage() {
           </Link>
 
           <div className="flex items-center gap-3">
+            <Link
+              href="/terms"
+              className="text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors hidden sm:inline"
+            >
+              Terms (EULA)
+            </Link>
+            <span className="text-slate-300 hidden sm:inline">•</span>
+            <Link
+              href="/privacy"
+              className="text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors hidden sm:inline"
+            >
+              Privacy
+            </Link>
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/60 text-amber-800 text-xs font-medium">
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
               <span>Family Support Desk</span>
@@ -390,6 +403,10 @@ export default function SupportPage() {
             © {new Date().getFullYear()} Bedtime Stories. All rights reserved.
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/terms" className="hover:text-slate-600 transition-colors">
+              Terms (EULA)
+            </Link>
+            <span>•</span>
             <Link href="/privacy" className="hover:text-slate-600 transition-colors">
               Privacy Policy
             </Link>

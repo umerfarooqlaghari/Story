@@ -14,7 +14,8 @@ import {
   HeartHandshake,
   Mail,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react'
 
 export default function PrivacyPolicyPage() {
@@ -33,6 +34,19 @@ export default function PrivacyPolicyPage() {
           </Link>
 
           <div className="flex items-center gap-3">
+            <Link
+              href="/terms"
+              className="text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors hidden sm:inline"
+            >
+              Terms of Service (EULA)
+            </Link>
+            <span className="text-slate-300 hidden sm:inline">•</span>
+            <Link
+              href="/support"
+              className="text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors hidden sm:inline"
+            >
+              Support
+            </Link>
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/60 text-amber-800 text-xs font-medium">
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
               <span>Bedtime Stories Legal</span>
@@ -264,13 +278,20 @@ export default function PrivacyPolicyPage() {
         </div>
 
         {/* Back Link Footer */}
-        <div className="mt-12 text-center">
+        <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4 text-center">
           <Link
             href="/"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors shadow-md shadow-slate-900/10"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Return to Bedtime Story Library</span>
+          </Link>
+          <Link
+            href="/terms"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors shadow-sm"
+          >
+            <FileText className="w-4 h-4 text-indigo-600" />
+            <span>View Terms of Service & EULA</span>
           </Link>
         </div>
 

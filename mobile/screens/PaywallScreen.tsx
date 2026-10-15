@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert
+  Alert,
+  Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -465,8 +466,39 @@ export default function PaywallScreen({ navigation }: any) {
           </TouchableOpacity>
 
           <Text style={styles.legalNotice}>
-            Subscription renews automatically unless cancelled at least 24 hours prior to end of period. Payment will be charged to your Apple ID / RevenueCat account.
+            Payment will be charged to your Apple ID account at confirmation of purchase. Subscriptions automatically renew ({selectedPlan === 'yearly' ? '$320.00 / year' : '$30.00 / month'}) unless auto-renew is disabled at least 24 hours before the end of the current billing cycle. Your account will be charged for renewal within 24 hours prior to the end of the current period. Subscriptions may be managed and auto-renewal turned off anytime in your App Store Account Settings after purchase.
           </Text>
+
+          {/* Functional Links for App Store Guideline 3.1.2 */}
+          <View style={styles.legalLinksContainer}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/').catch(() => {
+                  Alert.alert('Terms of Use', 'Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/');
+                });
+              }}
+              style={styles.legalLinkBtn}
+            >
+              <Text style={styles.legalLinkText}>Terms of Use (EULA)</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.legalLinkDot}>•</Text>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                Alert.alert(
+                  'Privacy Policy & Child Safety',
+                  'Bedtime Kids Story Teller complies with COPPA and global child protection standards. We never record audio or store personal data from children. For inquiries, email info@alpha-devs.cloud.',
+                  [{ text: 'OK' }]
+                );
+              }}
+              style={styles.legalLinkBtn}
+            >
+              <Text style={styles.legalLinkText}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -714,5 +746,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 15,
     paddingHorizontal: 12
+  },
+  legalLinksContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 4
+  },
+  legalLinkBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 6
+  },
+  legalLinkText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#4f46e5',
+    textDecorationLine: 'underline'
+  },
+  legalLinkDot: {
+    fontSize: 11,
+    color: '#94a3b8'
   }
 });

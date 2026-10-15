@@ -1058,17 +1058,64 @@ export default function HomeScreen({ navigation }: any) {
             {activeModal === 'terms' && (
               <View style={{ gap: 16 }}>
                 <Text style={[styles.legalSectionTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
-                  Subscription Terms
+                  Standard Apple EULA & Acceptance
                 </Text>
                 <Text style={[styles.legalParagraph, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
-                  StoryTime Pro provides unlimited audio listening to all classical books. Plans are billed monthly at $30/month or annually at $320/year. Payment is charged to your Apple or Google account upon confirmation.
+                  By using Bedtime Kids Story Teller, you agree to these Terms and Apple’s Standard Licensed Application End User License Agreement (EULA). All usage is governed by Apple&apos;s standard terms and family-first safety standards.
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.contactSupportBtn, { backgroundColor: '#4f46e5', marginBottom: 8 }]}
+                  onPress={() => {
+                    Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/').catch(() => {
+                      Alert.alert('Terms of Use (EULA)', 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/');
+                    });
+                  }}
+                >
+                  <Text style={styles.contactSupportBtnText}>Open Apple Standard EULA (Terms of Use)</Text>
+                </TouchableOpacity>
+
+                <Text style={[styles.legalSectionTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                  Auto-Renewable Subscription Plans
+                </Text>
+                <Text style={[styles.legalParagraph, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                  Story Time Pro unlocks unlimited studio-grade ElevenLabs audio narration across all 20 classic fairy tales, unlimited custom AI story creation, and cross-device bookmark synchronization. Available plans:
+                  {'\n'}• Story Time Pro Monthly (/mo): $30.00 / month
+                  {'\n'}• Story Time Pro Yearly (/yr): $320.00 / year (Save $40 compared to monthly)
                 </Text>
 
                 <Text style={[styles.legalSectionTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
-                  Auto-Renewal & Cancellation
+                  Payment, Auto-Renewal & Renewal Charge
                 </Text>
                 <Text style={[styles.legalParagraph, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
-                  Subscriptions automatically renew unless auto-renew is disabled at least 24 hours prior to the end of the current billing cycle. You may cancel at any time within your device’s store settings.
+                  Payment is charged to your Apple ID account upon purchase confirmation. The subscription automatically renews unless auto-renew is disabled at least 24 hours prior to the end of the current billing period. Your Apple ID account will be charged for renewal within 24 hours prior to the end of the current period at the then-current price ($30.00/mo or $320.00/yr).
+                </Text>
+
+                <Text style={[styles.legalSectionTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                  How to Manage & Cancel Subscriptions
+                </Text>
+                <Text style={[styles.legalParagraph, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                  You can manage your subscriptions and turn off auto-renewal at any time:
+                  {'\n'}1. Open the Settings app on your iPhone or iPad.
+                  {'\n'}2. Tap your Apple ID profile at the top.
+                  {'\n'}3. Tap Subscriptions.
+                  {'\n'}4. Select Bedtime Kids Story Teller.
+                  {'\n'}5. Tap Cancel Subscription.
+                  {'\n\n'}Cancellation takes effect at the end of the current billing cycle.
+                </Text>
+
+                <Text style={[styles.legalSectionTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                  Free Audio Trial & Child Privacy (COPPA)
+                </Text>
+                <Text style={[styles.legalParagraph, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                  Guests receive 10 complimentary audio minutes (600 seconds) of classic stories. Any unused portion of a free trial period, if offered, is forfeited upon purchasing a subscription. Accounts and purchases must be managed by parents. We do not knowingly collect personal data from children under 13.
+                </Text>
+
+                <Text style={[styles.legalSectionTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                  Contact & Support
+                </Text>
+                <Text style={[styles.legalParagraph, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                  For billing or subscription assistance, email info@alpha-devs.cloud.
                 </Text>
               </View>
             )}

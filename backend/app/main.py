@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
@@ -1019,3 +1020,136 @@ async def submit_support_query(req: SupportQueryRequest):
         "email_sent": email_sent,
         "message": "Your support query has been successfully dispatched. Our team will review and reply to your email shortly."
     }
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_page():
+    """Serves the Terms of Service & EULA with full App Store Review Guideline 3.1.2 auto-renewal subscription disclosures."""
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terms of Service & EULA - Bedtime Kids Story Teller</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #fafaf9; color: #1e293b; margin: 0; padding: 24px 16px; line-height: 1.6; }
+    .container { max-width: 800px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 40px 32px; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
+    h1 { font-family: Georgia, serif; font-size: 32px; margin-top: 0; color: #0f172a; text-align: center; }
+    .badge { display: inline-block; background: #e0e7ff; color: #4338ca; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+    .header-wrap { text-align: center; margin-bottom: 32px; }
+    .subtitle { color: #64748b; font-style: italic; font-size: 16px; max-width: 600px; margin: 0 auto 8px; }
+    .date { font-size: 12px; color: #94a3b8; }
+    .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; margin: 16px 0; }
+    .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 18px 0; }
+    .plan-card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; background: #fdfbf7; }
+    .plan-price { font-size: 24px; font-weight: 900; color: #0f172a; margin: 8px 0; }
+    h2 { font-size: 20px; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-top: 32px; }
+    ul, ol { padding-left: 22px; }
+    li { margin-bottom: 8px; }
+    a { color: #4f46e5; text-decoration: underline; font-weight: 600; }
+    .footer { text-align: center; margin-top: 40px; font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-wrap">
+      <div class="badge">App Store & EULA Compliant</div>
+      <h1>Terms of Service & EULA</h1>
+      <p class="subtitle">End User License Agreement & Auto-Renewable Subscription Terms for Bedtime Kids Story Teller</p>
+      <div class="date">Effective Date: October 2026 • iOS & Web</div>
+    </div>
+
+    <h2>1. Acceptance of Terms & Apple Standard EULA</h2>
+    <p>By downloading or using <strong>Bedtime Kids Story Teller</strong> (&quot;StoryTime&quot;, &quot;we&quot;, &quot;our&quot;), you agree to these Terms and incorporate by reference Apple's Standard Licensed Application End User License Agreement (EULA) accessible at <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank">https://www.apple.com/legal/internet-services/itunes/dev/stdeula/</a>.</p>
+
+    <h2>2. Auto-Renewable Subscriptions (App Store Guideline 3.1.2)</h2>
+    <p>Bedtime Kids Story Teller offers premium auto-renewing subscriptions under the <strong>Story Time Pro</strong> tier for unlimited ElevenLabs bedtime audio narrations and personalized AI story generations:</p>
+
+    <div class="plan-grid">
+      <div class="plan-card">
+        <strong>Story Time Pro Monthly (/mo)</strong>
+        <div class="plan-price">$30.00 <span style="font-size:13px;font-weight:normal;color:#64748b;">/ month</span></div>
+        <p style="font-size:12px;color:#64748b;margin:0;">Billed monthly. Unlocks all 20 classical audio stories and all 5 voice actors.</p>
+      </div>
+      <div class="plan-card" style="border-color:#f59e0b;background:#fffbeb;">
+        <strong style="color:#b45309;">Story Time Pro Yearly (/yr)</strong>
+        <div class="plan-price">$320.00 <span style="font-size:13px;font-weight:normal;color:#64748b;">/ year</span></div>
+        <p style="font-size:12px;color:#64748b;margin:0;">Billed annually ($26.67/mo equivalent). Save $40 compared to monthly billing.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;font-size:15px;color:#0f172a;">Important Subscription & Charging Information</h3>
+      <ul>
+        <li><strong>Payment:</strong> Payment is charged to your Apple ID Account at purchase confirmation.</li>
+        <li><strong>Auto-Renewal:</strong> Subscription automatically renews unless auto-renew is disabled at least 24 hours prior to the end of the current billing cycle.</li>
+        <li><strong>Renewal Charge:</strong> Your Apple ID account will be charged for renewal within 24 hours prior to the end of the current period at the then-current price ($30.00/mo or $320.00/yr).</li>
+        <li><strong>Free Trial:</strong> New listeners receive 10 complimentary audio minutes (600 seconds) without charge. Any unused portion of a free trial period, if offered, will be forfeited when the user purchases a subscription.</li>
+      </ul>
+    </div>
+
+    <h2>3. How to Manage or Cancel Your Subscription (iOS)</h2>
+    <p>You can cancel or manage your subscriptions anytime in your Apple ID Account Settings:</p>
+    <ol>
+      <li>Open the <strong>Settings</strong> app on your iPhone or iPad.</li>
+      <li>Tap your <strong>Apple ID profile / Name</strong> at the top.</li>
+      <li>Tap <strong>Subscriptions</strong>.</li>
+      <li>Select <strong>Bedtime Kids Story Teller</strong>.</li>
+      <li>Tap <strong>Cancel Subscription</strong>.</li>
+    </ol>
+    <p>Cancellation takes effect at the conclusion of the active billing period; access remains fully active until then.</p>
+
+    <h2>4. Child Safety & COPPA Compliance</h2>
+    <p>We strictly comply with the Children's Online Privacy Protection Act (COPPA). We do not collect personal data from children under 13. Accounts and subscriptions must be managed by parents. We do not access microphones or record room audio.</p>
+
+    <h2>5. Contact & Support</h2>
+    <p>For inquiries, email <a href="mailto:info@alpha-devs.cloud">info@alpha-devs.cloud</a>. Read our <a href="/privacy">Privacy Policy</a>.</p>
+
+    <div class="footer">
+      © 2026 Bedtime Kids Story Teller • Alpha-Devs. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>""")
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page():
+    """Serves the Privacy Policy page."""
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy - Bedtime Kids Story Teller</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #fafaf9; color: #1e293b; margin: 0; padding: 24px 16px; line-height: 1.6; }
+    .container { max-width: 800px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 40px 32px; border: 1px solid #e2e8f0; }
+    h1 { font-family: Georgia, serif; font-size: 32px; margin-top: 0; color: #0f172a; text-align: center; }
+    h2 { font-size: 20px; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-top: 32px; }
+    a { color: #4f46e5; text-decoration: underline; font-weight: 600; }
+    .footer { text-align: center; margin-top: 40px; font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Privacy Policy & Disclosures</h1>
+    <p style="text-align:center;color:#64748b;">Transparency, Child Safety & Audio Privacy</p>
+
+    <h2>1. COPPA & Child Safety</h2>
+    <p>Bedtime Kids Story Teller strictly complies with COPPA. We do not solicit or collect personal information from children under 13.</p>
+
+    <h2>2. Zero Audio Recording</h2>
+    <p>Audio is strictly outbound streaming from ElevenLabs narration models. We never request microphone permissions or record household audio.</p>
+
+    <h2>3. Subscriptions & Billing</h2>
+    <p>In-app subscriptions are processed via Apple StoreKit and RevenueCat under strict security. See our <a href="/terms">Terms of Service & EULA</a> for complete auto-renewal disclosures.</p>
+
+    <h2>4. Contact Us</h2>
+    <p>For questions or data deletion requests, contact <a href="mailto:info@alpha-devs.cloud">info@alpha-devs.cloud</a>.</p>
+
+    <div class="footer">
+      © 2026 Bedtime Kids Story Teller • Alpha-Devs
+    </div>
+  </div>
+</body>
+</html>""")
+
