@@ -22,17 +22,31 @@ import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../lib/clients';
 import { API_BASE_URL } from '../lib/config';
 import { useSubscription } from '../hooks/useSubscription';
-import { clearUserSession } from '../lib/auth';
+import { clearUserSession, deleteUserAccount } from '../lib/auth';
+import { openSubscriptionManagement, cancelBackendSubscription } from '../lib/subscriptionService';
 import Svg, { Path, Circle } from 'react-native-svg';
 import {
   getAllBookmarks,
   addBookmarkListener,
   formatBookmarkTime,
   deleteStoryBookmark,
+  clearAllBookmarks,
   StoryBookmark
 } from '../lib/bookmarks';
 
 // Custom SVG Icons
+const CreditCardIcon = ({ size = 18, color = '#6366f1' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M1 4h22v16H1zM1 10h22" />
+  </Svg>
+);
+
+const AlertTriangleIcon = ({ size = 18, color = '#ef4444' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <Path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+    <Path d="M12 9v4M12 17h.01" />
+  </Svg>
+);
 const GlobeIcon = ({ size = 16, color = '#f59e0b' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <Circle cx="12" cy="12" r="10" />
@@ -228,14 +242,16 @@ const FAQS_DATA = [
 ];
 
 export default function HomeScreen({ navigation }: any) {
-  const { isPremium, trialSecondsRemaining, user } = useSubscription();
+  const { isPremium, trialSecondsRemaining, user, subscriptionPlan, refreshStatus } = useSubscription();
   const [shelves, setShelves] = useState<Array<{ category: string; books: StoryBook[] }>>([]);
   const [loading, setLoading] = useState(true);
 
   // Sidebar Hamburger Drawer & Theme States
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNightMode, setIsNightMode] = useState(false);
-  const [activeModal, setActiveModal] = useState<null | 'faqs' | 'support' | 'privacy' | 'terms' | 'bookmarks'>(null);
+  const [activeModal, setActiveModal] = useState<null | 'faqs' | 'support' | 'privacy' | 'terms' | 'bookmarks' | 'subscription' | 'deleteAccount'>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isCancellingSub, setIsCancellingSub] = useState(false);
   const [expandedFaqIndex, setExpandedFaqIndex] = useState<number | null>(0);
 
   // Bookmarks state (persisted listening and reading progress)
@@ -816,37 +832,122 @@ export default function HomeScreen({ navigation }: any) {
                   </View>
                   <ChevronRightIcon size={14} color={isNightMode ? '#64748b' : '#94a3b8'} />
                 </TouchableOpacity>
+
+                {/* Subscription & Billing */}
+                <TouchableOpacity
+                  style={[styles.menuRowItem, isNightMode && { borderBottomColor: '#1e293b' }]}
+                  onPress={() => {
+                    setMenuOpen(false);
+                    setActiveModal('subscription');
+                  }}
+                >
+                  <View style={styles.menuRowLeft}>
+                    <View style={[styles.menuItemIconWrap, { backgroundColor: isNightMode ? '#2e1065' : '#ede9fe' }]}>
+                      <CreditCardIcon size={16} color={isNightMode ? '#c4b5fd' : '#7c3aed'} />
+                    </View>
+                    <Text style={[styles.menuItemText, { color: isNightMode ? '#f1f5f9' : '#1e293b' }]}>
+                      Subscription & Billing
+                    </Text>
+                  </View>
+                  <ChevronRightIcon size={14} color={isNightMode ? '#64748b' : '#94a3b8'} />
+                </TouchableOpacity>
+
+                {/* Account & Data Deletion (Apple Guideline 5.1.1(v)) */}
+                {user && (
+                  <TouchableOpacity
+                    style={[styles.menuRowItem, isNightMode && { borderBottomColor: '#1e293b' }]}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      setActiveModal('deleteAccount');
+                    }}
+                  >
+                    <View style={styles.menuRowLeft}>
+                      <View style={[styles.menuItemIconWrap, { backgroundColor: isNightMode ? '#450a0a' : '#fee2e2' }]}>
+                        <TrashIcon size={16} color="#ef4444" />
+                      </View>
+                      <Text style={[styles.menuItemText, { color: '#ef4444' }]}>
+                        Delete Account & Data
+                      </Text>
+                    </View>
+                    <ChevronRightIcon size={14} color="#fca5a5" />
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* Account Section */}
               <View style={[styles.drawerAccountCard, isNightMode && { backgroundColor: '#1e293b', borderColor: '#334155' }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                  <UserIcon size={16} color={isNightMode ? '#38bdf8' : '#0f172a'} />
-                  <Text style={[styles.accountEmailText, { color: isNightMode ? '#ffffff' : '#0f172a' }]} numberOfLines={1}>
-                    {user ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email) : 'Guest Listener'}
-                  </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <UserIcon size={16} color={isNightMode ? '#38bdf8' : '#0f172a'} />
+                    <Text style={[styles.accountEmailText, { color: isNightMode ? '#ffffff' : '#0f172a' }]} numberOfLines={1}>
+                      {user ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email) : 'Guest Listener'}
+                    </Text>
+                  </View>
+                  {isPremium ? (
+                    <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 }}>
+                      <Text style={{ fontSize: 9.5, fontWeight: '800', color: '#b45309' }}>PRO</Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 {user ? (
-                  <TouchableOpacity
-                    style={styles.logoutBtn}
-                    onPress={async () => {
-                      await clearUserSession();
-                      setMenuOpen(false);
-                    }}
-                  >
-                    <Text style={styles.logoutBtnText}>Sign Out</Text>
-                  </TouchableOpacity>
+                  <View style={{ gap: 6 }}>
+                    <TouchableOpacity
+                      style={styles.drawerManageSubBtn}
+                      onPress={() => {
+                        setMenuOpen(false);
+                        setActiveModal('subscription');
+                      }}
+                    >
+                      <Text style={styles.drawerManageSubBtnText}>Manage / Cancel Subscription</Text>
+                    </TouchableOpacity>
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                      <TouchableOpacity
+                        style={styles.drawerDeleteBtn}
+                        onPress={() => {
+                          setMenuOpen(false);
+                          setActiveModal('deleteAccount');
+                        }}
+                      >
+                        <Text style={styles.drawerDeleteBtnText}>Delete Account</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.logoutBtn}
+                        onPress={async () => {
+                          await clearUserSession();
+                          setMenuOpen(false);
+                        }}
+                      >
+                        <Text style={styles.logoutBtnText}>Sign Out</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 ) : (
-                  <TouchableOpacity
-                    style={styles.signInBtn}
-                    onPress={() => {
-                      setMenuOpen(false);
-                      navigation.navigate('Auth');
-                    }}
-                  >
-                    <Text style={styles.signInBtnText}>Sign In / Register</Text>
-                  </TouchableOpacity>
+                  <View style={{ gap: 6 }}>
+                    <TouchableOpacity
+                      style={styles.signInBtn}
+                      onPress={() => {
+                        setMenuOpen(false);
+                        navigation.navigate('Auth');
+                      }}
+                    >
+                      <Text style={styles.signInBtnText}>Sign In / Register</Text>
+                    </TouchableOpacity>
+
+                    {isPremium && (
+                      <TouchableOpacity
+                        style={styles.drawerManageSubBtn}
+                        onPress={() => {
+                          setMenuOpen(false);
+                          setActiveModal('subscription');
+                        }}
+                      >
+                        <Text style={styles.drawerManageSubBtnText}>Manage Subscription</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 )}
               </View>
 
@@ -875,6 +976,8 @@ export default function HomeScreen({ navigation }: any) {
               {activeModal === 'support' && 'Help & Customer Support'}
               {activeModal === 'privacy' && 'Privacy Policy & Disclosures'}
               {activeModal === 'terms' && 'Terms of Service'}
+              {activeModal === 'subscription' && 'Subscription & Billing'}
+              {activeModal === 'deleteAccount' && 'Delete Account & Data'}
             </Text>
             <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.detailCloseBtn}>
               <CloseIcon size={20} color={isNightMode ? '#ffffff' : '#0f172a'} />
@@ -1117,6 +1220,233 @@ export default function HomeScreen({ navigation }: any) {
                 <Text style={[styles.legalParagraph, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
                   For billing or subscription assistance, email info@alpha-devs.cloud.
                 </Text>
+              </View>
+            )}
+
+            {/* SUBSCRIPTION & BILLING MODAL CONTENT */}
+            {activeModal === 'subscription' && (
+              <View style={{ gap: 16 }}>
+                {/* Current Plan Card */}
+                <View style={[styles.subDetailCard, isNightMode && { backgroundColor: '#131b2e', borderColor: '#1e293b' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <CrownIcon size={20} color={isPremium ? '#d97706' : '#94a3b8'} />
+                      <Text style={[styles.subDetailPlanTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                        {isPremium 
+                          ? (subscriptionPlan === 'yearly' ? 'Story Time Pro (Yearly)' : 'Story Time Pro (Monthly)')
+                          : 'Free 10-Minute Trial'}
+                      </Text>
+                    </View>
+                    <View style={[styles.subStatusBadge, { backgroundColor: isPremium ? '#dcfce7' : '#f1f5f9' }]}>
+                      <Text style={[styles.subStatusBadgeText, { color: isPremium ? '#15803d' : '#64748b' }]}>
+                        {isPremium ? 'Active' : 'Trial'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={[styles.subDetailDesc, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                    {isPremium
+                      ? 'You have unlimited studio-grade ElevenLabs voice narration, access to all 20 classic fairy tales, and unlimited custom AI story creation.'
+                      : 'You are currently using the 10-minute trial. Upgrade anytime to unlock unlimited listening and bedtime voice actors.'}
+                  </Text>
+
+                  {/* Primary Apple Management Button */}
+                  <TouchableOpacity
+                    style={styles.appleManageBtn}
+                    onPress={openSubscriptionManagement}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={styles.appleManageBtnText}>
+                      Manage / Cancel in Apple Subscriptions
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Secondary In-App Cancellation for Server Sync */}
+                  {isPremium && (
+                    <TouchableOpacity
+                      style={styles.cancelSubBtn}
+                      disabled={isCancellingSub}
+                      onPress={() => {
+                        Alert.alert(
+                          'Cancel Subscription?',
+                          'Are you sure you want to cancel your Story Time Pro subscription?\n\n• You will retain full access until the conclusion of your current paid billing period.\n• If your subscription is billed via the Apple App Store, please also confirm cancellation in your Apple ID settings.',
+                          [
+                            { text: 'Keep My Plan', style: 'cancel' },
+                            {
+                              text: 'Open Apple Settings',
+                              onPress: () => openSubscriptionManagement()
+                            },
+                            {
+                              text: 'Cancel Subscription',
+                              style: 'destructive',
+                              onPress: async () => {
+                                setIsCancellingSub(true);
+                                try {
+                                  const userId = user?.id || 'guest_device_user';
+                                  const res = await cancelBackendSubscription(userId);
+                                  refreshStatus();
+                                  Alert.alert(
+                                    'Subscription Status',
+                                    res.message || 'Subscription cancelled successfully.'
+                                  );
+                                } catch (e: any) {
+                                  Alert.alert('Notice', e.message || 'Unable to update subscription.');
+                                } finally {
+                                  setIsCancellingSub(false);
+                                }
+                              }
+                            }
+                          ]
+                        );
+                      }}
+                    >
+                      {isCancellingSub ? (
+                        <ActivityIndicator size="small" color="#ef4444" />
+                      ) : (
+                        <Text style={styles.cancelSubBtnText}>Cancel Subscription on Server</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Apple Guideline 3.1.2 Instructions Card */}
+                <View style={[styles.instructionsCard, isNightMode && { backgroundColor: '#131b2e', borderColor: '#1e293b' }]}>
+                  <Text style={[styles.instructionsTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
+                    How to Manage or Cancel on iOS:
+                  </Text>
+                  <Text style={[styles.instructionStep, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                    1. Open the <Text style={{ fontWeight: '700' }}>Settings</Text> app on your iPhone or iPad.
+                  </Text>
+                  <Text style={[styles.instructionStep, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                    2. Tap your <Text style={{ fontWeight: '700' }}>Apple ID name</Text> at the very top.
+                  </Text>
+                  <Text style={[styles.instructionStep, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                    3. Tap <Text style={{ fontWeight: '700' }}>Subscriptions</Text>.
+                  </Text>
+                  <Text style={[styles.instructionStep, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                    4. Select <Text style={{ fontWeight: '700' }}>Bedtime Kids Story Teller</Text>.
+                  </Text>
+                  <Text style={[styles.instructionStep, { color: isNightMode ? '#cbd5e1' : '#475569' }]}>
+                    5. Tap <Text style={{ fontWeight: '700' }}>Cancel Subscription</Text>.
+                  </Text>
+                  <Text style={[styles.instructionNote, { color: isNightMode ? '#94a3b8' : '#64748b' }]}>
+                    Per Apple policy, cancellation takes effect at the end of the current billing cycle. No further renewal charges will occur.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* ACCOUNT DELETION MODAL CONTENT (Apple Guideline 5.1.1(v)) */}
+            {activeModal === 'deleteAccount' && (
+              <View style={{ gap: 16 }}>
+                <View style={[styles.deleteWarningCard, isNightMode && { backgroundColor: '#2d1217', borderColor: '#7f1d1d' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
+                      <TrashIcon size={18} color="#dc2626" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.deleteWarningTitle, { color: isNightMode ? '#fca5a5' : '#991b1b' }]}>
+                        Permanent Account Deletion
+                      </Text>
+                      <Text style={[styles.deleteWarningSub, { color: isNightMode ? '#fecaca' : '#b91c1c' }]}>
+                        This action is irreversible and permanent.
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={[styles.deleteWarningText, { color: isNightMode ? '#fecaca' : '#7f1d1d' }]}>
+                    In accordance with Apple App Store Review Guideline 5.1.1(v) and global privacy regulations, all your data will be permanently wiped from our systems:
+                  </Text>
+                  <View style={{ gap: 4, marginTop: 8, paddingLeft: 6 }}>
+                    <Text style={[styles.deleteBullet, { color: isNightMode ? '#fecaca' : '#7f1d1d' }]}>• Custom created fairy tales and stories</Text>
+                    <Text style={[styles.deleteBullet, { color: isNightMode ? '#fecaca' : '#7f1d1d' }]}>• Audio preferences and narrator voice records</Text>
+                    <Text style={[styles.deleteBullet, { color: isNightMode ? '#fecaca' : '#7f1d1d' }]}>• Saved bookmarks and listening progress</Text>
+                    <Text style={[styles.deleteBullet, { color: isNightMode ? '#fecaca' : '#7f1d1d' }]}>• Your account credentials and user profile</Text>
+                  </View>
+                </View>
+
+                {/* Apple Subscriptions Warning Card */}
+                <View style={[styles.appleSubWarningCard, isNightMode && { backgroundColor: '#2e1d0f', borderColor: '#78350f' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <AlertTriangleIcon size={18} color="#d97706" />
+                    <Text style={[styles.appleSubWarningTitle, { color: isNightMode ? '#fde68a' : '#92400e' }]}>
+                      Active Apple Subscription Notice
+                    </Text>
+                  </View>
+                  <Text style={[styles.appleSubWarningText, { color: isNightMode ? '#fef3c7' : '#78350f' }]}>
+                    Deleting your account in the app DOES NOT automatically cancel your Apple App Store subscription. Subscriptions are billed directly through your Apple ID account.
+                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.openAppleSubBtn}
+                    onPress={openSubscriptionManagement}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={styles.openAppleSubBtnText}>Manage Apple Subscriptions</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Permanent Delete Action Button */}
+                <TouchableOpacity
+                  style={styles.confirmDeleteBtn}
+                  disabled={isDeletingAccount}
+                  activeOpacity={0.88}
+                  onPress={() => {
+                    if (!user?.id) {
+                      Alert.alert('Notice', 'No registered account found to delete.');
+                      return;
+                    }
+
+                    Alert.alert(
+                      'Permanently Delete Account?',
+                      `Are you sure you want to delete ${user.email}? All your custom bedtime stories, bookmarks, and audio settings will be erased immediately.`,
+                      [
+                        { text: 'Keep Account', style: 'cancel' },
+                        {
+                          text: 'Delete Forever',
+                          style: 'destructive',
+                          onPress: async () => {
+                            setIsDeletingAccount(true);
+                            try {
+                              const res = await deleteUserAccount(user.id, user.email);
+                              if (res.success) {
+                                await clearAllBookmarks();
+                                refreshStatus();
+                                setActiveModal(null);
+                                setMenuOpen(false);
+                                Alert.alert(
+                                  'Account Deleted',
+                                  'Your account and all associated personal data have been permanently removed.'
+                                );
+                              } else {
+                                Alert.alert('Deletion Error', res.message);
+                              }
+                            } catch (e: any) {
+                              Alert.alert('Error', e.message || 'Could not complete account deletion.');
+                            } finally {
+                              setIsDeletingAccount(false);
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  {isDeletingAccount ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.confirmDeleteBtnText}>Permanently Delete My Account</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{ paddingVertical: 10, alignItems: 'center' }}
+                  onPress={() => setActiveModal(null)}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: isNightMode ? '#94a3b8' : '#64748b' }}>
+                    Cancel & Return to App
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -1945,15 +2275,35 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
   },
+  drawerManageSubBtn: {
+    backgroundColor: '#4f46e5',
+    borderRadius: 9,
+    paddingVertical: 7,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  drawerManageSubBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  drawerDeleteBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
+  drawerDeleteBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ef4444',
+  },
   logoutBtn: {
-    marginTop: 6,
     paddingVertical: 6,
     alignItems: 'center',
   },
   logoutBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#ef4444',
+    color: '#64748b',
   },
   signInBtn: {
     backgroundColor: '#0f172a',
@@ -1966,6 +2316,146 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+  },
+
+  // Subscription Modal Styles
+  subDetailCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  subDetailPlanTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  subStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 9999,
+  },
+  subStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  subDetailDesc: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  appleManageBtn: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  appleManageBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cancelSubBtn: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  cancelSubBtnText: {
+    color: '#ef4444',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  instructionsCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  instructionsTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  instructionStep: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  instructionNote: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+
+  // Account Deletion Modal Styles
+  deleteWarningCard: {
+    backgroundColor: '#fff1f2',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#fecdd3',
+  },
+  deleteWarningTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  deleteWarningSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  deleteWarningText: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  deleteBullet: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  appleSubWarningCard: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  appleSubWarningTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  appleSubWarningText: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  openAppleSubBtn: {
+    backgroundColor: '#d97706',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  openAppleSubBtnText: {
+    color: '#ffffff',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  confirmDeleteBtn: {
+    backgroundColor: '#dc2626',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  confirmDeleteBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
   },
   drawerFooterText: {
     fontSize: 11,

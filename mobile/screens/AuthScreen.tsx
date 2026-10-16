@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/clients';
-import { saveUserSession, clearUserSession, getUserSession, UserProfile } from '../lib/auth';
+import { saveUserSession, clearUserSession, getUserSession, deleteUserAccount, UserProfile } from '../lib/auth';
+import { openSubscriptionManagement } from '../lib/subscriptionService';
 import { API_BASE_URL } from '../lib/config';
 import Svg, { Path, Circle } from 'react-native-svg';
 
@@ -240,6 +241,46 @@ export default function AuthScreen({ navigation }: any) {
     Alert.alert('Signed Out', 'You are now browsing as Guest.');
   };
 
+  const handleDeleteAccount = () => {
+    if (!currentUser?.id) return;
+
+    Alert.alert(
+      'Delete Account & Data?',
+      'Are you sure you want to permanently delete your account?\n\n• All your custom stories, audio history, and saved bookmarks will be permanently wiped.\n• This action cannot be undone.\n\n⚠️ IMPORTANT: If you have an active Apple App Store subscription, deleting your account does NOT cancel Apple billing. Please cancel your subscription in iPhone Settings > Apple ID > Subscriptions.',
+      [
+        { text: 'Keep Account', style: 'cancel' },
+        {
+          text: 'Manage Apple Subscriptions',
+          onPress: () => openSubscriptionManagement()
+        },
+        {
+          text: 'Permanently Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              const res = await deleteUserAccount(currentUser.id, currentUser.email);
+              if (res.success) {
+                setCurrentUser(null);
+                Alert.alert(
+                  'Account Deleted',
+                  'Your account and all associated personal data have been permanently removed.',
+                  [{ text: 'OK', onPress: () => navigation.goBack() }]
+                );
+              } else {
+                Alert.alert('Deletion Failed', res.message);
+              }
+            } catch (e: any) {
+              Alert.alert('Deletion Failed', e.message || 'An error occurred while deleting your account.');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -280,11 +321,34 @@ export default function AuthScreen({ navigation }: any) {
               <CrownIcon size={32} color="#d97706" />
             </View>
             <Text style={styles.profileEmail}>{currentUser.email}</Text>
-            <Text style={styles.profileSub}>30-Day Session Active • Story Time Pro Ready</Text>
+            <Text style={styles.profileSub}>
+              {currentUser.full_name ? `${currentUser.full_name} • ` : ''}30-Day Session Active • Story Time Pro Ready
+            </Text>
 
-            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-              <Text style={styles.signOutButtonText}>Sign Out</Text>
-            </TouchableOpacity>
+            <View style={{ width: '100%', gap: 10, marginTop: 10 }}>
+              {/* Manage Subscriptions Button */}
+              <TouchableOpacity
+                style={styles.manageSubButton}
+                onPress={openSubscriptionManagement}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.manageSubButtonText}>Manage / Cancel Subscription</Text>
+              </TouchableOpacity>
+
+              {/* Sign Out Button */}
+              <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} activeOpacity={0.85}>
+                <Text style={styles.signOutButtonText}>Sign Out</Text>
+              </TouchableOpacity>
+
+              {/* Delete Account Button (Apple Guideline 5.1.1(v)) */}
+              <TouchableOpacity
+                style={styles.deleteAccountButton}
+                onPress={handleDeleteAccount}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.deleteAccountButtonText}>Delete Account & Data</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <View style={styles.formContainer}>
@@ -741,12 +805,39 @@ const styles = StyleSheet.create({
   signOutButton: {
     backgroundColor: '#ffffff',
     borderWidth: 1.5,
-    borderColor: '#fca5a5',
-    paddingVertical: 10,
+    borderColor: '#e2e8f0',
+    paddingVertical: 11,
     paddingHorizontal: 22,
-    borderRadius: 20
+    borderRadius: 14,
+    alignItems: 'center'
   },
   signOutButtonText: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  manageSubButton: {
+    backgroundColor: '#4f46e5',
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    alignItems: 'center'
+  },
+  manageSubButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  deleteAccountButton: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1.2,
+    borderColor: '#fca5a5',
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    alignItems: 'center'
+  },
+  deleteAccountButtonText: {
     color: '#dc2626',
     fontSize: 13,
     fontWeight: '700'

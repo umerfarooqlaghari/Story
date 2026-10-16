@@ -18,6 +18,7 @@ import {
   findPackage,
   purchasePackage,
   restorePurchases,
+  openSubscriptionManagement,
   ENTITLEMENT_ID,
   ENTITLEMENT_ID_ALT
 } from '../lib/subscriptionService';
@@ -453,17 +454,31 @@ export default function PaywallScreen({ navigation }: any) {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            onPress={handleRestore}
-            disabled={restoring || purchasing}
-            style={{ paddingVertical: 8, alignItems: 'center' }}
-          >
-            {restoring ? (
-              <ActivityIndicator size="small" color="#64748b" />
-            ) : (
-              <Text style={styles.restoreText}>Restore Purchases</Text>
-            )}
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+            <TouchableOpacity
+              onPress={handleRestore}
+              disabled={restoring || purchasing}
+              style={{ paddingVertical: 8, alignItems: 'center' }}
+            >
+              {restoring ? (
+                <ActivityIndicator size="small" color="#64748b" />
+              ) : (
+                <Text style={styles.restoreText}>Restore Purchases</Text>
+              )}
+            </TouchableOpacity>
+
+            <Text style={{ color: '#cbd5e1' }}>•</Text>
+
+            <TouchableOpacity
+              onPress={openSubscriptionManagement}
+              disabled={purchasing}
+              style={{ paddingVertical: 8, alignItems: 'center' }}
+            >
+              <Text style={[styles.restoreText, { color: '#4f46e5', fontWeight: '600' }]}>
+                Manage / Cancel Subscription
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           <Text style={styles.legalNotice}>
             Payment will be charged to your Apple ID account at confirmation of purchase. Subscriptions automatically renew ({selectedPlan === 'yearly' ? '$320.00 / year' : '$30.00 / month'}) unless auto-renew is disabled at least 24 hours before the end of the current billing cycle. Your account will be charged for renewal within 24 hours prior to the end of the current period. Subscriptions may be managed and auto-renewal turned off anytime in your App Store Account Settings after purchase.
@@ -481,6 +496,16 @@ export default function PaywallScreen({ navigation }: any) {
               style={styles.legalLinkBtn}
             >
               <Text style={styles.legalLinkText}>Terms of Use (EULA)</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.legalLinkDot}>•</Text>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={openSubscriptionManagement}
+              style={styles.legalLinkBtn}
+            >
+              <Text style={[styles.legalLinkText, { color: '#4f46e5' }]}>Manage Subscriptions</Text>
             </TouchableOpacity>
 
             <Text style={styles.legalLinkDot}>•</Text>

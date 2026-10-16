@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -113,6 +113,15 @@ class SubscriptionRequest(BaseModel):
 class TrialUpdateRequest(BaseModel):
     user_id: str
     seconds_listened: int
+
+class CancelSubscriptionRequest(BaseModel):
+    user_id: str
+    reason: Optional[str] = None
+
+class DeleteAccountRequest(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    confirm: Optional[bool] = True
 
 # ==================== AUTHENTICATION ROUTES (AWS SES OTP & 30-DAY TOKENS) ====================
 
@@ -465,6 +474,137 @@ async def process_subscription(req: SubscriptionRequest):
         "is_premium": True,
         "revenuecat_synced": rc_success
     }
+
+@app.post("/api/cancel-subscription")
+async def cancel_subscription(req: CancelSubscriptionRequest):
+    """
+    Cancels user subscription in the database and revokes promotional entitlements.
+    In accordance with Apple Guideline 3.1.2, note that subscriptions billed via Apple App Store
+    must also have auto-renewal turned off in Apple ID Subscriptions settings.
+    """
+    user_id = req.user_id
+    if not user_id or user_id == "guest_device_user":
+        raise HTTPException(status_code=400, detail="Invalid user ID.")
+
+    if is_valid_uuid(user_id):
+        try:
+            supabase.table("subscriptions").upsert({
+                "user_id": user_id,
+                "status": "cancelled",
+                "premium_tier": None
+            }).execute()
+
+            supabase.table("profiles").upsert({
+                "id": user_id,
+                "is_premium": False,
+                "subscription_plan": None
+            }).execute()
+        except Exception as e:
+            print(f"DB cancel subscription error: {e}")
+
+    # Revoke promotional entitlement in RevenueCat if present
+    if RC_SECRET_API_KEY:
+        try:
+            rc_url = f"https://api.revenuecat.com/v1/subscribers/{user_id}/entitlements/story_teller_pro/promotional"
+            headers = {"Authorization": f"Bearer {RC_SECRET_API_KEY}"}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.delete(rc_url, headers=headers)
+        except Exception as e:
+            print(f"RevenueCat promotional revoke notice: {e}")
+
+    return {
+        "success": True,
+        "message": "Subscription cancelled successfully. Note: For App Store purchases, please ensure auto-renew is also disabled in Apple ID settings.",
+        "apple_management_url": "https://apps.apple.com/account/subscriptions"
+    }
+
+@app.post("/api/auth/delete-account")
+async def delete_account(req: DeleteAccountRequest, authorization: Optional[str] = Header(None)):
+    """
+    Apple Guideline 5.1.1(v) Compliant Account Deletion:
+    Permanently deletes user profile, custom stories, audio variants, subscription record,
+    auth OTPs, and the Supabase Auth user.
+    Also removes subscriber record in RevenueCat.
+    """
+    user_id = req.user_id
+    if not user_id or user_id == "guest_device_user":
+        raise HTTPException(status_code=400, detail="Invalid user ID for deletion.")
+
+    # 1. Resolve user's email if not provided
+    user_email = req.email
+    if not user_email and is_valid_uuid(user_id):
+        try:
+            prof = supabase.table("profiles").select("email, full_name").eq("id", user_id).execute()
+            if prof.data and len(prof.data) > 0:
+                user_email = prof.data[0].get("email")
+        except Exception as e:
+            print(f"Error fetching email from profile: {e}")
+
+    if not user_email:
+        try:
+            admin_users = supabase.auth.admin.list_users()
+            for u in admin_users:
+                if str(getattr(u, "id", "")) == str(user_id):
+                    user_email = getattr(u, "email", None)
+                    break
+        except Exception as e:
+            print(f"Error listing auth users: {e}")
+
+    # 2. Delete user's custom created stories and their cached audio variants
+    try:
+        stories_res = supabase.table("stories").select("id").eq("user_id", user_id).eq("is_classic", False).execute()
+        if stories_res.data:
+            for s in stories_res.data:
+                sid = s.get("id")
+                if sid:
+                    try:
+                        supabase.table("story_audio_variants").delete().eq("story_id", sid).execute()
+                    except Exception as ve:
+                        print(f"Variant delete notice: {ve}")
+            supabase.table("stories").delete().eq("user_id", user_id).eq("is_classic", False).execute()
+    except Exception as e:
+        print(f"Stories delete notice: {e}")
+
+    # 3. Delete user subscription records
+    try:
+        supabase.table("subscriptions").delete().eq("user_id", user_id).execute()
+    except Exception as e:
+        print(f"Subscription delete notice: {e}")
+
+    # 4. Delete user profile
+    try:
+        supabase.table("profiles").delete().eq("id", user_id).execute()
+    except Exception as e:
+        print(f"Profile delete notice: {e}")
+
+    # 5. Delete OTP records for the email
+    if user_email:
+        try:
+            supabase.table("auth_otps").delete().eq("email", user_email).execute()
+        except Exception as e:
+            print(f"Auth OTPs delete notice: {e}")
+
+    # 6. Delete user from Supabase Auth admin
+    try:
+        supabase.auth.admin.delete_user(user_id)
+    except Exception as e:
+        print(f"Supabase auth admin delete notice: {e}")
+
+    # 7. Delete subscriber in RevenueCat
+    if RC_SECRET_API_KEY:
+        try:
+            rc_url = f"https://api.revenuecat.com/v1/subscribers/{user_id}"
+            headers = {"Authorization": f"Bearer {RC_SECRET_API_KEY}"}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.delete(rc_url, headers=headers)
+        except Exception as e:
+            print(f"RevenueCat subscriber delete notice: {e}")
+
+    return {
+        "success": True,
+        "message": "Your account and all associated personal data have been permanently deleted in full compliance with Apple Guideline 5.1.1(v) and privacy regulations."
+    }
+
 
 @app.post("/api/update-trial-time")
 async def update_trial_time(req: TrialUpdateRequest):

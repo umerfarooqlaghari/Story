@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Purchases from 'react-native-purchases';
+import { API_BASE_URL } from './config';
+import { clearAllBookmarks } from './bookmarks';
 
 export interface UserProfile {
   id: string;
@@ -82,5 +85,56 @@ export const clearUserSession = async (): Promise<void> => {
     notifyListeners(null);
   } catch (e) {
     console.error('Error clearing user session:', e);
+  }
+};
+
+/**
+ * Permanently deletes the user account, associated cloud data, local bookmarks,
+ * and clears session in compliance with Apple App Store Guideline 5.1.1(v).
+ */
+export const deleteUserAccount = async (
+  userId: string,
+  email?: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const tokens = await getTokens();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (tokens?.access_token) {
+      headers['Authorization'] = `Bearer ${tokens.access_token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/auth/delete-account`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ user_id: userId, email: email || '' }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || data.message || 'Failed to delete account on server.');
+    }
+
+    // 1. Clear local bookmarks
+    await clearAllBookmarks();
+
+    // 2. Clear user session and tokens
+    await clearUserSession();
+
+    // 3. Log out of RevenueCat
+    try {
+      await Purchases.logOut();
+    } catch {}
+
+    return {
+      success: true,
+      message: data.message || 'Your account and personal data have been permanently deleted.',
+    };
+  } catch (e: any) {
+    return {
+      success: false,
+      message: e.message || 'Failed to delete account. Please try again or contact support.',
+    };
   }
 };

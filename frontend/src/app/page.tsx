@@ -586,6 +586,45 @@ export default function Home() {
     }
   }
 
+  const handleCancelSubscription = async () => {
+    if (!user) return
+    if (!confirm("Are you sure you want to cancel your Story Time PRO subscription? If billed through Apple App Store, please also verify cancellation in your Apple ID settings.")) return
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/cancel-subscription`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id })
+      })
+      const data = await res.json()
+      setIsSubscribed(false)
+      setSubscriptionPlan(null)
+      alert(data.message || "Subscription cancelled successfully.")
+    } catch {
+      alert("Failed to cancel subscription.")
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!user) return
+    if (!confirm("Are you sure you want to permanently delete your account?\n\n• All your custom stories, audio narrations, and personal data will be wiped.\n• This action cannot be undone.\n\nNote: If you have an active Apple App Store subscription, please also cancel it in iPhone Settings > Apple ID > Subscriptions.")) return
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/delete-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id, email: user.email })
+      })
+      const data = await res.json()
+      handleSignOut()
+      setIsAuthOpen(false)
+      setIsSidebarOpen(false)
+      alert(data.message || "Account permanently deleted.")
+    } catch {
+      alert("Failed to delete account. Please try again.")
+    }
+  }
+
   // Custom AI Story Generation
   const handleGenerateStory = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1471,14 +1510,22 @@ export default function Home() {
               </p>
 
               {user && isSubscribed ? (
-                <div className="p-3.5 mb-6 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center shrink-0">
-                    <Crown className="w-4 h-4 text-purple-700" />
+                <div className="p-3.5 mb-6 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center shrink-0">
+                      <Crown className="w-4 h-4 text-purple-700" />
+                    </div>
+                    <div className="text-xs">
+                      <div className="font-bold">StoryTime PRO Active ({subscriptionPlan === 'yearly' ? 'Yearly' : 'Monthly'})</div>
+                      <div className="text-[11px] text-purple-700">All stories, audio narrations, and custom tales are completely unlocked!</div>
+                    </div>
                   </div>
-                  <div className="text-xs">
-                    <div className="font-bold">StoryTime PRO Active ({subscriptionPlan === 'yearly' ? 'Yearly' : 'Monthly'})</div>
-                    <div className="text-[11px] text-purple-700">All stories, audio narrations, and custom tales are completely unlocked!</div>
-                  </div>
+                  <button
+                    onClick={handleCancelSubscription}
+                    className="px-3 py-1.5 rounded-xl border border-purple-300 hover:bg-purple-100 text-purple-800 font-bold text-xs shrink-0 cursor-pointer"
+                  >
+                    Cancel Subscription
+                  </button>
                 </div>
               ) : !user ? (
                 <div className="p-3.5 mb-6 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3">
@@ -1905,12 +1952,28 @@ export default function Home() {
                   Signed in as: <span className="font-bold text-slate-800 dark:text-slate-200">{user?.email || 'Guest Listener'}</span>
                 </div>
                 {user ? (
-                  <button
-                    onClick={() => { handleSignOut(); setIsSidebarOpen(false) }}
-                    className="w-full py-2.5 rounded-xl border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-950/20 transition cursor-pointer"
-                  >
-                    Sign Out
-                  </button>
+                  <div className="space-y-2">
+                    {isSubscribed && (
+                      <button
+                        onClick={handleCancelSubscription}
+                        className="w-full py-2.5 rounded-xl border border-purple-200 dark:border-purple-900/40 text-purple-600 dark:text-purple-400 text-xs font-bold hover:bg-purple-50 dark:hover:bg-purple-950/20 transition cursor-pointer"
+                      >
+                        Cancel Subscription
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { handleSignOut(); setIsSidebarOpen(false) }}
+                      className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-900 transition cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                    <button
+                      onClick={handleDeleteAccount}
+                      className="w-full py-2.5 rounded-xl border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-950/20 transition cursor-pointer"
+                    >
+                      Delete Account & Data
+                    </button>
+                  </div>
                 ) : (
                   <button
                     onClick={() => { setIsSidebarOpen(false); setAuthMode('login'); setIsAuthOpen(true) }}

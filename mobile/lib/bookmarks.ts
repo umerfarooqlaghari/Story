@@ -116,3 +116,15 @@ export function formatBookmarkTime(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
+
+/**
+ * Permanently clears all bookmarks for account deletion or privacy reset
+ */
+export async function clearAllBookmarks(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(BOOKMARKS_STORAGE_KEY);
+    notifyListeners({});
+  } catch (err) {
+    console.log('Error clearing all bookmarks:', err);
+  }
+}

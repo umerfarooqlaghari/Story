@@ -1,7 +1,8 @@
 import Purchases, { LOG_LEVEL, PurchasesOffering, PurchasesPackage, CustomerInfo } from 'react-native-purchases';
-import { LogBox, Platform } from 'react-native';
+import { LogBox, Platform, Linking, Alert } from 'react-native';
 import Constants from 'expo-constants';
 import {
+  API_BASE_URL,
   REVENUECAT_IOS_API_KEY,
   REVENUECAT_ANDROID_API_KEY,
   REVENUECAT_TEST_STORE_API_KEY
@@ -182,5 +183,61 @@ export const restorePurchases = async (): Promise<{ success: boolean; customerIn
   } catch (e: any) {
     console.warn('[RevenueCat] restorePurchases error:', e);
     throw e;
+  }
+};
+
+/**
+ * Opens Apple App Store or Google Play Store subscription management screen.
+ * Complies with Apple Review Guideline 3.1.2 by allowing users to manage or cancel auto-renewal.
+ */
+export const openSubscriptionManagement = async (): Promise<void> => {
+  try {
+    if (Platform.OS === 'ios') {
+      // 1. Try StoreKit native sheet via Purchases if supported
+      if (typeof Purchases.showManageSubscriptions === 'function') {
+        try {
+          await Purchases.showManageSubscriptions();
+          return;
+        } catch (e) {
+          console.log('[Subscription] Purchases.showManageSubscriptions fallback:', e);
+        }
+      }
+      // 2. Direct Apple standard subscription URL (Apple Guideline compliant)
+      const appleUrl = 'https://apps.apple.com/account/subscriptions';
+      await Linking.openURL(appleUrl);
+    } else {
+      // Android Play Store subscriptions
+      await Linking.openURL('https://play.google.com/store/account/subscriptions');
+    }
+  } catch (err) {
+    console.warn('[Subscription] Could not open subscription management:', err);
+    Alert.alert(
+      'Manage Subscription',
+      Platform.OS === 'ios'
+        ? 'To cancel or manage your subscription, please open iPhone Settings > Apple ID > Subscriptions > Bedtime Kids Story Teller.'
+        : 'To cancel or manage your subscription, please open Google Play Store > Profile > Payments & Subscriptions.'
+    );
+  }
+};
+
+/**
+ * Cancels subscription records on our backend server and revokes promotional entitlements.
+ */
+export const cancelBackendSubscription = async (
+  userId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/cancel-subscription`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId })
+    });
+    const data = await res.json().catch(() => ({}));
+    return {
+      success: res.ok,
+      message: data.message || (res.ok ? 'Subscription cancelled successfully.' : 'Failed to cancel subscription.')
+    };
+  } catch (e: any) {
+    return { success: false, message: e.message || 'Failed to cancel subscription on server.' };
   }
 };
