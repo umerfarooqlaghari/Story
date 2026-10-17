@@ -65,6 +65,7 @@ export default function App() {
             <Stack.Screen name="Paywall" component={PaywallScreen} />
             <Stack.Screen name="Auth" component={AuthScreen} />
             <Stack.Screen name="Classics" component={ClassicStoriesScreen} />
+            <Stack.Screen name="GenerateStory" component={GenerateStoryScreen} />
             <Stack.Screen name="Generate" component={GenerateStoryScreen} />
             <Stack.Screen name="Player" component={PlayerScreen} />
           </Stack.Navigator>

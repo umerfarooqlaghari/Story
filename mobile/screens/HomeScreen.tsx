@@ -1500,9 +1500,14 @@ export default function HomeScreen({ navigation }: any) {
               onPress={() => setAddBooksTab('dreamweaver')}
               style={[styles.addBooksTabBtn, addBooksTab === 'dreamweaver' && styles.addBooksTabBtnActive]}
             >
-              <Text style={[styles.addBooksTabBtnText, addBooksTab === 'dreamweaver' && styles.addBooksTabBtnTextActive]}>
-                AI Tale
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Text style={[styles.addBooksTabBtnText, addBooksTab === 'dreamweaver' && styles.addBooksTabBtnTextActive]}>
+                  AI Tale
+                </Text>
+                <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 5, borderWidth: 1, borderColor: '#fde68a' }}>
+                  <Text style={{ fontSize: 8.5, fontWeight: '800', color: '#b45309' }}>SOON</Text>
+                </View>
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -1718,26 +1723,71 @@ export default function HomeScreen({ navigation }: any) {
                 </View>
               )}
 
-              {/* TAB 3: AI DREAMWEAVER */}
+              {/* TAB 3: AI DREAMWEAVER (COMING SOON & LOCKED) */}
               {addBooksTab === 'dreamweaver' && (
-                <View style={{ gap: 16, alignItems: 'center', paddingVertical: 20 }}>
+                <View style={{ gap: 14, alignItems: 'center', paddingVertical: 16 }}>
                   <View style={styles.aiDreamweaverIconWrap}>
-                    <SparkleIcon size={32} color="#f59e0b" />
+                    <LockIcon size={28} color="#d97706" />
                   </View>
+                  
+                  <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#fde68a', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <SparkleIcon size={12} color="#b45309" />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#b45309', letterSpacing: 0.5 }}>
+                      IN PRIVATE BETA • COMING SOON
+                    </Text>
+                  </View>
+
                   <Text style={[styles.aiDreamweaverTitle, { color: isNightMode ? '#ffffff' : '#0f172a' }]}>
                     AI Story Dreamweaver
                   </Text>
+                  
                   <Text style={[styles.aiDreamweaverDesc, { color: isNightMode ? '#94a3b8' : '#64748b' }]}>
-                    Let our intelligent narrative engine generate a fully voiced bedtime story tailored with characters, themes, and soothing narration.
+                    Our intelligent bedtime author with instant ElevenLabs voiceover and ambient SFX mixing is in final studio polish. It will unlock in our upcoming update!
                   </Text>
+
+                  {/* Feature preview box */}
+                  <View style={{ width: '100%', backgroundColor: isNightMode ? '#1e293b' : '#f8fafc', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: isNightMode ? '#334155' : '#e2e8f0', gap: 8, marginTop: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 14 }}>🪄</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: isNightMode ? '#cbd5e1' : '#475569' }}>
+                        Custom characters, themes & bedtime morals
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 14 }}>🎙️</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: isNightMode ? '#cbd5e1' : '#475569' }}>
+                        Real-time ElevenLabs narrator voiceover
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 14 }}>🌙</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: isNightMode ? '#cbd5e1' : '#475569' }}>
+                        Layered ambient bedtime lullaby soundscapes
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Locked Action Button */}
                   <TouchableOpacity
-                    style={styles.openDreamweaverBtn}
+                    disabled={true}
+                    style={[styles.openDreamweaverBtn, { backgroundColor: isNightMode ? '#334155' : '#e2e8f0', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 28, opacity: 0.85 }]}
+                  >
+                    <LockIcon size={15} color={isNightMode ? '#94a3b8' : '#64748b'} />
+                    <Text style={[styles.openDreamweaverBtnText, { color: isNightMode ? '#94a3b8' : '#64748b' }]}>
+                      Coming Soon • Generator Locked
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
                     onPress={() => {
                       setAddBooksModalVisible(false);
                       navigation.navigate('GenerateStory');
                     }}
+                    style={{ paddingVertical: 4, paddingHorizontal: 12 }}
                   >
-                    <Text style={styles.openDreamweaverBtnText}>Open Dreamweaver Studio</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#6366f1' }}>
+                      Preview Studio Screen ›
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}

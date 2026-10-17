@@ -20,6 +20,12 @@ from .auth_service import (
 )
 from datetime import datetime, timezone, timedelta
 from openai import AsyncOpenAI
+from .audio_processor import (
+    mix_voice_with_ambient,
+    detect_ambient_track_from_context,
+    CURATED_AMBIENT_TRACKS,
+    DEFAULT_AMBIENT_TRACK_ID
+)
 
 app = FastAPI(title="Bedtime Story API")
 
@@ -99,12 +105,14 @@ class StoryRequest(BaseModel):
     theme: str
     voice_id: Optional[str] = "JBFqnCBsd6RMkjVDRZzb"
     is_premium: Optional[bool] = False
+    ambient_track_id: Optional[str] = None
 
 class AudioVariantRequest(BaseModel):
     story_id: str
     voice_id: Optional[str] = "JBFqnCBsd6RMkjVDRZzb"
     text_content: Optional[str] = ""
     part_index: Optional[int] = 0
+    ambient_track_id: Optional[str] = None
 
 class SubscriptionRequest(BaseModel):
     user_id: str
@@ -656,6 +664,14 @@ async def get_voices():
     """Return available bedtime narrator voices."""
     return {"voices": CURATED_VOICES}
 
+@app.get("/api/ambient-tracks")
+async def get_ambient_tracks():
+    """Return available curated bedtime ambient soundscapes."""
+    return {
+        "ambient_tracks": CURATED_AMBIENT_TRACKS,
+        "default": DEFAULT_AMBIENT_TRACK_ID
+    }
+
 @app.get("/api/stories")
 async def get_stories(user_id: Optional[str] = None):
     """Return all stories: classic + public stories, plus private stories belonging to user_id."""
@@ -798,6 +814,8 @@ async def generate_story(request: StoryRequest):
     voice_id = request.voice_id or "JBFqnCBsd6RMkjVDRZzb"
 
     # 2. Generate Audio via ElevenLabs if key is present
+    has_sfx = False
+    used_ambient_id = None
     if ELEVENLABS_API_KEY:
         try:
             elevenlabs_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -810,11 +828,21 @@ async def generate_story(request: StoryRequest):
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(elevenlabs_url, json=payload, headers=headers)
                 if resp.status_code == 200:
-                    audio_content = resp.content
+                    raw_audio_content = resp.content
+                    chosen_ambient = request.ambient_track_id or detect_ambient_track_from_context(
+                        text=story_text,
+                        title=title,
+                        category="Bedtime Classics"
+                    )
+                    final_audio_content, used_ambient_id, has_sfx = mix_voice_with_ambient(
+                        voice_audio_bytes=raw_audio_content,
+                        ambient_track_id=chosen_ambient,
+                        ambient_volume_db=-18.0
+                    )
                     file_name = f"generated/{uuid.uuid4()}.mp3"
                     supabase.storage.from_("stories").upload(
                         path=file_name,
-                        file=audio_content,
+                        file=final_audio_content,
                         file_options={"content-type": "audio/mpeg", "upsert": "true"}
                     )
                     audio_url = supabase.storage.from_("stories").get_public_url(file_name)
@@ -829,7 +857,9 @@ async def generate_story(request: StoryRequest):
         "audio_url": audio_url,
         "category": "Bedtime Classics",
         "author": "AI Dreamweaver",
-        "is_classic": False
+        "is_classic": False,
+        "ambient_track_id": used_ambient_id,
+        "has_sfx": has_sfx
     }
     
     try:
@@ -840,7 +870,9 @@ async def generate_story(request: StoryRequest):
                 supabase.table("story_audio_variants").upsert({
                     "story_id": created["id"],
                     "voice_id": voice_id,
-                    "audio_url": created["audio_url"]
+                    "audio_url": created["audio_url"],
+                    "ambient_track_id": used_ambient_id,
+                    "has_sfx": has_sfx
                 }, on_conflict="story_id,voice_id").execute()
             except Exception as cache_err:
                 print(f"Notice caching custom story audio: {cache_err}")
@@ -901,17 +933,23 @@ async def get_or_generate_audio(request: AudioVariantRequest):
     
     # 1. Resolve story_id to a valid UUID if a title or placeholder was passed
     story_db_content = None
+    story_db_title = ""
+    story_db_category = ""
     if not is_valid_uuid(story_id):
         try:
-            match = supabase.table("stories").select("id, content").ilike("title", f"%{story_id}%").limit(1).execute()
+            match = supabase.table("stories").select("id, title, category, content").ilike("title", f"%{story_id}%").limit(1).execute()
             if match.data and len(match.data) > 0:
                 story_id = match.data[0]["id"]
+                story_db_title = match.data[0].get("title", "")
+                story_db_category = match.data[0].get("category", "")
                 story_db_content = match.data[0].get("content")
             else:
-                s_all = supabase.table("stories").select("id, title, content").execute()
+                s_all = supabase.table("stories").select("id, title, category, content").execute()
                 for s in (s_all.data or []):
                     if s["title"].lower() in str(story_id).lower() or str(story_id).lower() in s["title"].lower():
                         story_id = s["id"]
+                        story_db_title = s.get("title", "")
+                        story_db_category = s.get("category", "")
                         story_db_content = s.get("content")
                         break
         except Exception as e:
@@ -919,16 +957,22 @@ async def get_or_generate_audio(request: AudioVariantRequest):
 
     # 2. Determine full text of the story
     full_text = (request.text_content or "").strip()
-    if (len(full_text) < 40 or not full_text) and is_valid_uuid(story_id):
+    if is_valid_uuid(story_id):
         try:
-            if not story_db_content:
-                s_rec = supabase.table("stories").select("content").eq("id", story_id).execute()
-                if s_rec.data and s_rec.data[0].get("content"):
-                    story_db_content = s_rec.data[0]["content"]
-            if story_db_content:
+            if not story_db_content or not story_db_title:
+                s_rec = supabase.table("stories").select("title, category, content").eq("id", story_id).execute()
+                if s_rec.data and len(s_rec.data) > 0:
+                    rec = s_rec.data[0]
+                    if not story_db_title:
+                        story_db_title = rec.get("title", "")
+                    if not story_db_category:
+                        story_db_category = rec.get("category", "")
+                    if not story_db_content and rec.get("content"):
+                        story_db_content = rec.get("content")
+            if (len(full_text) < 40 or not full_text) and story_db_content:
                 full_text = story_db_content.strip()
         except Exception as e:
-            print(f"Fetch story content error: {e}")
+            print(f"Fetch story metadata error: {e}")
 
     # 3. Partition story text into narrative chunks and compute full duration
     chunks = split_story_into_chunks(full_text, max_chars=1400)
@@ -949,8 +993,9 @@ async def get_or_generate_audio(request: AudioVariantRequest):
         try:
             cached = supabase.table("story_audio_variants").select("*").eq("story_id", story_id).eq("voice_id", cache_voice_key).execute()
             if cached.data and len(cached.data) > 0:
+                c_row = cached.data[0]
                 return {
-                    "audio_url": cached.data[0]["audio_url"],
+                    "audio_url": c_row["audio_url"],
                     "cached": True,
                     "voice_id": voice_id,
                     "part_index": part_index,
@@ -958,19 +1003,25 @@ async def get_or_generate_audio(request: AudioVariantRequest):
                     "part_duration": part_duration,
                     "total_duration": total_duration,
                     "has_next_part": has_next_part,
-                    "chunk_durations": chunk_durations
+                    "chunk_durations": chunk_durations,
+                    "ambient_track_id": c_row.get("ambient_track_id"),
+                    "has_sfx": c_row.get("has_sfx", False)
                 }
             
             # If part 0 with default voice, check master story table audio_url
             if part_index == 0 and voice_id == "JBFqnCBsd6RMkjVDRZzb":
-                s_rec = supabase.table("stories").select("audio_url").eq("id", story_id).execute()
+                s_rec = supabase.table("stories").select("audio_url, ambient_track_id, has_sfx").eq("id", story_id).execute()
                 if s_rec.data and s_rec.data[0].get("audio_url"):
                     main_audio = s_rec.data[0]["audio_url"]
+                    ambient_id = s_rec.data[0].get("ambient_track_id")
+                    sfx_val = s_rec.data[0].get("has_sfx", False)
                     try:
                         supabase.table("story_audio_variants").upsert({
                             "story_id": story_id,
                             "voice_id": voice_id,
-                            "audio_url": main_audio
+                            "audio_url": main_audio,
+                            "ambient_track_id": ambient_id,
+                            "has_sfx": sfx_val
                         }, on_conflict="story_id,voice_id").execute()
                     except Exception:
                         pass
@@ -983,7 +1034,9 @@ async def get_or_generate_audio(request: AudioVariantRequest):
                         "part_duration": part_duration,
                         "total_duration": total_duration,
                         "has_next_part": has_next_part,
-                        "chunk_durations": chunk_durations
+                        "chunk_durations": chunk_durations,
+                        "ambient_track_id": ambient_id,
+                        "has_sfx": sfx_val
                     }
         except Exception as e:
             print(f"Cache check error: {e}")
@@ -1043,8 +1096,27 @@ async def get_or_generate_audio(request: AudioVariantRequest):
                     "total_duration": total_duration,
                     "has_next_part": has_next_part,
                     "chunk_durations": chunk_durations,
-                    "quota_limited": True
+                    "quota_limited": True,
+                    "ambient_track_id": None,
+                    "has_sfx": False
                 }
+
+    # 5.1 Layer calming ambient bedtime soundscape underneath ElevenLabs voiceover
+    has_sfx = False
+    used_ambient_id = None
+    if audio_content:
+        chosen_ambient = request.ambient_track_id or detect_ambient_track_from_context(
+            text=chunk_to_narrate,
+            title=story_db_title,
+            category=story_db_category
+        )
+        audio_content, used_ambient_id, has_sfx = mix_voice_with_ambient(
+            voice_audio_bytes=audio_content,
+            ambient_track_id=chosen_ambient,
+            ambient_volume_db=-18.0
+        )
+    else:
+        raise HTTPException(status_code=500, detail="Voice synthesis produced no audio content.")
 
     # 6. Upload audio to Supabase Storage bucket 'stories'
     safe_story_folder = story_id if is_valid_uuid(story_id) else str(uuid.uuid4())
@@ -1067,12 +1139,18 @@ async def get_or_generate_audio(request: AudioVariantRequest):
             variant_data = {
                 "story_id": story_id,
                 "voice_id": save_voice_key,
-                "audio_url": audio_url
+                "audio_url": audio_url,
+                "ambient_track_id": used_ambient_id,
+                "has_sfx": has_sfx
             }
             supabase.table("story_audio_variants").upsert(variant_data, on_conflict="story_id,voice_id").execute()
             
             if part_index == 0 and selected_voice_to_try == "JBFqnCBsd6RMkjVDRZzb":
-                supabase.table("stories").update({"audio_url": audio_url}).eq("id", story_id).execute()
+                supabase.table("stories").update({
+                    "audio_url": audio_url,
+                    "ambient_track_id": used_ambient_id,
+                    "has_sfx": has_sfx
+                }).eq("id", story_id).execute()
         except Exception as e:
             print(f"Error caching variant: {e}")
     
@@ -1085,7 +1163,9 @@ async def get_or_generate_audio(request: AudioVariantRequest):
         "part_duration": part_duration,
         "total_duration": total_duration,
         "has_next_part": has_next_part,
-        "chunk_durations": chunk_durations
+        "chunk_durations": chunk_durations,
+        "ambient_track_id": used_ambient_id,
+        "has_sfx": has_sfx
     }
 
 @app.post("/api/seed-classic-stories")

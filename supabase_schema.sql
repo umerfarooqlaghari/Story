@@ -38,6 +38,8 @@ CREATE POLICY "Users can insert their own stories" ON public.stories FOR INSERT 
 -- UPDATE: Add classic fields to stories
 ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS is_classic BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS ambient_track_id TEXT DEFAULT NULL;
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS has_sfx BOOLEAN DEFAULT FALSE;
 -- Allow anonymous read of classic stories (since user_id might be null or a system ID for classics)
 CREATE POLICY "Anyone can view classic stories" ON public.stories FOR SELECT USING (is_classic = TRUE);
 
@@ -47,9 +49,13 @@ CREATE TABLE IF NOT EXISTS public.story_audio_variants (
   story_id UUID REFERENCES public.stories(id) ON DELETE CASCADE,
   voice_id TEXT NOT NULL,
   audio_url TEXT NOT NULL,
+  ambient_track_id TEXT DEFAULT NULL,
+  has_sfx BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(story_id, voice_id)
 );
+ALTER TABLE public.story_audio_variants ADD COLUMN IF NOT EXISTS ambient_track_id TEXT DEFAULT NULL;
+ALTER TABLE public.story_audio_variants ADD COLUMN IF NOT EXISTS has_sfx BOOLEAN DEFAULT FALSE;
 
 ALTER TABLE public.story_audio_variants ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view audio variants" ON public.story_audio_variants FOR SELECT USING (true);
